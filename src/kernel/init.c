@@ -27,6 +27,7 @@
 #include "kernel/gdt.h"
 #include "kernel/syscall.h"
 #include "kernel/tss.h"
+#include "vm/frame.h"
 #ifdef FILESYS
 #include "devices/block.h"
 #include "devices/ide.h"
@@ -94,6 +95,7 @@ main (void)
   palloc_init (user_page_limit);
   malloc_init ();
   paging_init ();
+  ft_init();
 
   /* Segmentation. */
 #ifdef USERPROG
