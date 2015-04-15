@@ -20,7 +20,12 @@ bool frame_less (const struct hash_elem *, const struct hash_elem *, void *);
 struct frame* frame_lookup (void *);
 
 void
-ft_init() { printf("Calling ft_init..."); hash_init(&frame_table, frame_hash, frame_less, NULL); printf("ft_init successful."); }
+ft_init()
+{
+	printf("Calling ft_init...");
+	hash_init(&frame_table, frame_hash, frame_less, NULL);
+	printf("ft_init successful.");
+}
 
 unsigned
 frame_hash (const struct hash_elem *ft_elem, void *aux UNUSED)
