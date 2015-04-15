@@ -160,6 +160,23 @@ page_fault (struct intr_frame *f)
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
+
+  /*
+    How does OS handle a page fault?
+    • Interrupt causes system to be entered
+    • System saves state of running process, then vectors to page fault handler routine
+      – find or create (through eviction) a page frame into which to load the needed page (1)
+        • if I/O is required, run some other process while it’s going on
+      – find the needed page on disk and bring it into the page frame (2)
+        • run some other process while the I/O is going on
+      – fix up the page table entry
+        • mark it as “valid,” set “referenced” and “modified” bits to false, set protection bits appropriately, point to correct page frame
+      – put the process on the ready queue
+
+    Courtesy https://courses.cs.washington.edu/courses/cse451/12sp/lectures/13-hardware.support.pdf (slides 3-6)
+
+    LET'S DO SECOND-CHANCE REPLACEMENT FOR EXTRA CREDIT! :D
+  */
   printf ("Page fault at %p: %s error %s page in %s context.\n",
           fault_addr,
           not_present ? "not present" : "rights violation",

@@ -1,0 +1,15 @@
+Change ‘process.c’ to record the necessary infor-
+mation in the supplemental page table when loading an executable and setting up its
+stack. Implement loading of code and data segments in the page fault handler. For
+now, consider only valid accesses.
+
+
+
+
+Used sites and resources
+-------------------------
+http://csl.skku.edu/uploads/CSE3008F09/project3.pdf
+https://groups.google.com/forum/#!topic/12au-cs140/5LDnfoOMdfY
+http://web.stanford.edu/class/cs140/projects/pintos/pintos_4.html
+http://courses.cs.vt.edu/cs3204/spring2007/pintos/Project3SessionSpring2007.ppt
+https://courses.cs.washington.edu/courses/cse451/12sp/lectures/13-hardware.support.pdf
