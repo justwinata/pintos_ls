@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <hash.h>
 #include "vm/page.h"
+#include "filesys/file.h"
+#include "filesys/off_t.h"
+
 /*
 	Supplemental Page Table: "Gives you information about the status of virtual memory (which addresses are logicially mapped, etc.)" - Courtesy https://groups.google.com/forum/#!topic/12au-cs140/5LDnfoOMdfY
 */
@@ -30,16 +33,22 @@ static struct hash spt;	/* Supplemental Page Table */
 struct page
 {
 	void *addr;			/* Virtual address of page */
-	bool mapped;		/* Page is logically mapped or not */
+	bool loaded;		/* Page is loaded from file or not */
+	bool swapped;		/* Page is swapped or not */
 	uint number;		/* Assignment number to designate order of creation or being swapped in */
 	uint size;			/* Size of data */
 	void *proc_addr;	/* Address of process (thread) to which page belongs */
+	bool writable;		/* Page is writable or not*/
+	struct file *file;	/* The file the page is loaded from */
+	off_t ofs;			/* The offset the page is at within file */
 	struct hash_elem hash_elem;
 };
 
 unsigned page_hash (const struct hash_elem *spt_elem, void *aux UNUSED);
 bool page_less (const struct hash_elem *first, const struct hash_elem *second, void *aux UNUSED);
 struct page *page_lookup (void *address);
+struct page *add_page (void *addr);
+void remove_page (struct *page);
 
 /* Take in two pages? */
 void swap(void);
@@ -49,6 +58,24 @@ void evict(void);
 
 /* Implement actual swapping/eviction and employ chosen replacement algorithm here */
 void find_candidate(void);
+
+struct page *
+add_page(void *addr)
+{
+    struct hash_elem *elem = (struct hash_elem *) malloc (sizeof (struct hash_elem));
+    struct page *page = hash_entry (elem, struct page, hash_elem);
+    page->addr = addr;
+    hash_insert(&spt, &page->hash_elem);
+    return page;
+}
+
+void
+remove_page (struct page *page)
+{
+	struct hash_elem *e = hash_delete(&spt, &page->hash_elem);
+	free (page);
+	free (e); //TODO: Figure out if this is needed
+}
 
 void
 spt_init() 

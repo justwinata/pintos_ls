@@ -4,6 +4,8 @@
 #include "kernel/gdt.h"
 #include "kernel/interrupt.h"
 #include "kernel/thread.h"
+#include "vm/frame.h"
+#include "vm/page.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -178,7 +180,7 @@ page_fault (struct intr_frame *f)
     LET'S DO SECOND-CHANCE REPLACEMENT FOR EXTRA CREDIT! :D
   */
 
-  
+    load_page ((void *)(fault_addr - fault_addr % PGSIZE));
 
   /*
   printf ("Page fault at %p: %s error %s page in %s context.\n",
@@ -194,21 +196,32 @@ page_fault (struct intr_frame *f)
 }
 
 void
-load_page(void)
+load_page(void *addr)
 {
   /* Calculate how to fill this page.
      We will read PAGE_READ_BYTES bytes from FILE
      and zero the final PAGE_ZERO_BYTES bytes. */
-  size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
-  size_t page_zero_bytes = PGSIZE - page_read_bytes;
+  size_t page_read_bytes = PGSIZE;  //read_bytes < PGSIZE ? read_bytes : PGSIZE;
+  size_t page_zero_bytes = 0;       //PGSIZE - page_read_bytes;
+
+  struct page *page = page_lookup (addr);
+
+  //Note: a file might be null for a given page; if so, this means it is not a part of the executable section of a process. In that case, it would also have a null offset (ofs).
+
+  if(page->swapped)
+  {
+    //TODO: Implement swapping and stuff
+  }
 
   /* Get a page of memory. */
+  //Should virtual addresses be contiguous for a process? Are they already?
   uint8_t *kpage = allocate_uframe (PAL_USER); //palloc_get_page (PAL_USER);
   if (kpage == NULL)
     return false;
 
   /* Load this page. */
-  if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
+  file_seek (page->filefile, page->ofs);
+  if (file_read (page->file, kpage, page_read_bytes) != (int) page_read_bytes)
     {
       deallocate_uframe (kpage);
       return false; 
@@ -222,6 +235,7 @@ load_page(void)
       return false; 
     }
 
+  page->loaded = true;
   /* Advance. */
   // read_bytes -= page_read_bytes;
   // zero_bytes -= page_zero_bytes;
