@@ -177,6 +177,10 @@ page_fault (struct intr_frame *f)
 
     LET'S DO SECOND-CHANCE REPLACEMENT FOR EXTRA CREDIT! :D
   */
+
+  
+
+  /*
   printf ("Page fault at %p: %s error %s page in %s context.\n",
           fault_addr,
           not_present ? "not present" : "rights violation",
@@ -186,5 +190,41 @@ page_fault (struct intr_frame *f)
   printf("There is no crying in Pintos!\n");
 
   kill (f);
+  */
+}
+
+void
+load_page(void)
+{
+  /* Calculate how to fill this page.
+     We will read PAGE_READ_BYTES bytes from FILE
+     and zero the final PAGE_ZERO_BYTES bytes. */
+  size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+  size_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+  /* Get a page of memory. */
+  uint8_t *kpage = allocate_uframe (PAL_USER); //palloc_get_page (PAL_USER);
+  if (kpage == NULL)
+    return false;
+
+  /* Load this page. */
+  if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
+    {
+      deallocate_uframe (kpage);
+      return false; 
+    }
+  memset (kpage + page_read_bytes, 0, page_zero_bytes);
+
+  /* Add the page to the process's address space. */
+  if (!install_page (upage, kpage, writable)) 
+    {
+      deallocate_uframe (kpage);
+      return false; 
+    }
+
+  /* Advance. */
+  // read_bytes -= page_read_bytes;
+  // zero_bytes -= page_zero_bytes;
+  // upage += PGSIZE;
 }
 
