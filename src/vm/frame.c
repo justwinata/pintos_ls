@@ -1,6 +1,7 @@
 #include <stdio.h>
 //#include "kernel/synch.h" //TODO: Consider if synchronization for hash table needed
 #include <hash.h>
+#include "kernel/malloc.h"
 #include "vm/frame.h"
 
 static struct hash frame_table;

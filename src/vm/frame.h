@@ -3,7 +3,6 @@
 
 #include <stddef.h>
 #include "kernel/palloc.h"
-#include "kernel/malloc.h"
 
 void ft_init(void);
 void *allocate_uframe(enum palloc_flags flags);
