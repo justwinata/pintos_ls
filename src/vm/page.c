@@ -46,7 +46,12 @@ void evict(void);
 void find_candidate(void);
 
 void
-ft_init() { printf("Calling spt_init..."); hash_init(&frame_table, frame_hash, frame_less, NULL); printf("spt_init successful: %p", &spt); }
+spt_init() 
+{ 
+	printf("Calling spt_init..."); 
+	hash_init(&spt, page_hash, page_less, NULL); 
+	printf("spt_init successful: %p", &spt); 
+}
 
 unsigned
 page_hash (const struct hash_elem *spt_elem, void *aux UNUSED)
@@ -64,7 +69,7 @@ page_less (const struct hash_elem *first, const struct hash_elem *second, void *
 }
 
 struct page*
-frame_lookup (void *address)
+page_lookup (void *address)
 {
 	struct page p;
 	struct hash_elem *e;
