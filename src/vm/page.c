@@ -9,7 +9,7 @@
  |
  +-----------------------------------------------------------------------------
  |
- |  Description:  Vritual memory, etc.
+ |  Description:  Virtual memory, etc.
  |
  |    Algorithm:  Hash table for SPT...
  |
