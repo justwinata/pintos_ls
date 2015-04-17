@@ -158,11 +158,6 @@ page_fault (struct intr_frame *f)
       return;
     }
 
-
-  /* To implement virtual memory, delete the rest of the function
-     body, and replace it with code that brings in the page to
-     which fault_addr refers. */
-
   /*
     How does OS handle a page fault?
     • Interrupt causes system to be entered
@@ -176,25 +171,24 @@ page_fault (struct intr_frame *f)
       – put the process on the ready queue
 
     Courtesy https://courses.cs.washington.edu/courses/cse451/12sp/lectures/13-hardware.support.pdf (slides 3-6)
-
-    LET'S DO SECOND-CHANCE REPLACEMENT FOR EXTRA CREDIT! :D
   */
 
     load_page ((void *)(fault_addr - fault_addr % PGSIZE));
-
-  /*
-  printf ("Page fault at %p: %s error %s page in %s context.\n",
-          fault_addr,
-          not_present ? "not present" : "rights violation",
-          write ? "writing" : "reading",
-          user ? "user" : "kernel");
-
-  printf("There is no crying in Pintos!\n");
-
-  kill (f);
-  */
 }
 
+/*
+ * Function:  load_page 
+ * --------------------
+ *  Loads pages as needed when a process page faults on memory it should have 
+      have access to but has not been loaded (lazy loading). Calculates  using 
+      the file from which the pages for the process are laoded (stored by 
+      pointer in each page entry in the SPT) and loads the page-sized section 
+      of the file. The faulting process will return to the statement on which 
+      it page faulted and resume with that same instruction, which should then 
+      continue without another page fault.
+ *
+ *  addr: the address on which the halted process faulted
+ */
 void
 load_page(void *addr)
 {
@@ -206,7 +200,9 @@ load_page(void *addr)
 
   struct page *page = page_lookup (addr);
 
-  //Note: a file might be null for a given page; if so, this means it is not a part of the executable section of a process. In that case, it would also have a null offset (ofs).
+  /* Note: a file might be null for a given page; if so, this means it is not 
+     a part of the executable section of a process. In that case, it would 
+     also have a null offset (ofs). */
 
   if(page->swapped)
   {
@@ -235,6 +231,7 @@ load_page(void *addr)
       return false; 
     }
 
+  /* Mark the page as loaded */
   page->loaded = true;
   /* Advance. */
   // read_bytes -= page_read_bytes;
