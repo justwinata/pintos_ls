@@ -14,65 +14,67 @@ include ../../tests/Make.tests
 kernel.bin: CPPFLAGS += -I$(SRCDIR)/lib/kernel
 
 # Core kernel.
-kernel_SRC  = kernel/start.S		# Startup code.
-kernel_SRC += kernel/init.c		# Main program.
-kernel_SRC += kernel/thread.c		# Thread management core.
-kernel_SRC += kernel/switch.S		# Thread switch routine.
-kernel_SRC += kernel/interrupt.c	# Interrupt core.
-kernel_SRC += kernel/intr-stubs.S	# Interrupt stubs.
-kernel_SRC += kernel/synch.c		# Synchronization.
-kernel_SRC += kernel/palloc.c		# Page allocator.
-kernel_SRC += kernel/malloc.c		# Subpage allocator.
+kernel_SRC  = kernel/start.S			# Startup code.
+kernel_SRC += kernel/init.c				# Main program.
+kernel_SRC += kernel/thread.c			# Thread management core.
+kernel_SRC += kernel/switch.S			# Thread switch routine.
+kernel_SRC += kernel/interrupt.c		# Interrupt core.
+kernel_SRC += kernel/intr-stubs.S		# Interrupt stubs.
+kernel_SRC += kernel/synch.c			# Synchronization.
+kernel_SRC += kernel/palloc.c			# Page allocator.
+kernel_SRC += kernel/malloc.c			# Subpage allocator.
 
 # Device driver code.
-devices_SRC  = devices/pit.c		# Programmable interrupt timer chip.
-devices_SRC += devices/timer.c		# Periodic timer device.
-devices_SRC += devices/kbd.c		# Keyboard device.
-devices_SRC += devices/vga.c		# Video device.
-devices_SRC += devices/serial.c		# Serial port device.
-devices_SRC += devices/block.c		# Block device abstraction layer.
-devices_SRC += devices/partition.c	# Partition block device.
-devices_SRC += devices/ide.c		# IDE disk block device.
-devices_SRC += devices/input.c		# Serial and keyboard input.
-devices_SRC += devices/intq.c		# Interrupt queue.
-devices_SRC += devices/rtc.c		# Real-time clock.
-devices_SRC += devices/shutdown.c	# Reboot and power off.
-devices_SRC += devices/speaker.c	# PC speaker.
+devices_SRC  = devices/pit.c			# Programmable interrupt timer chip.
+devices_SRC += devices/timer.c			# Periodic timer device.
+devices_SRC += devices/kbd.c			# Keyboard device.
+devices_SRC += devices/vga.c			# Video device.
+devices_SRC += devices/serial.c			# Serial port device.
+devices_SRC += devices/block.c			# Block device abstraction layer.
+devices_SRC += devices/partition.c		# Partition block device.
+devices_SRC += devices/ide.c			# IDE disk block device.
+devices_SRC += devices/input.c			# Serial and keyboard input.
+devices_SRC += devices/intq.c			# Interrupt queue.
+devices_SRC += devices/rtc.c			# Real-time clock.
+devices_SRC += devices/shutdown.c		# Reboot and power off.
+devices_SRC += devices/speaker.c		# PC speaker.
 
 # Library code shared between kernel and user programs.
-lib_SRC  = lib/debug.c			# Debug helpers.
-lib_SRC += lib/random.c			# Pseudo-random numbers.
-lib_SRC += lib/stdio.c			# I/O library.
-lib_SRC += lib/stdlib.c			# Utility functions.
-lib_SRC += lib/string.c			# String functions.
-lib_SRC += lib/arithmetic.c		# 64-bit arithmetic for GCC.
-lib_SRC += lib/ustar.c			# Unix standard tar format utilities.
+lib_SRC  = lib/debug.c					# Debug helpers.
+lib_SRC += lib/random.c					# Pseudo-random numbers.
+lib_SRC += lib/stdio.c					# I/O library.
+lib_SRC += lib/stdlib.c					# Utility functions.
+lib_SRC += lib/string.c					# String functions.
+lib_SRC += lib/arithmetic.c				# 64-bit arithmetic for GCC.
+lib_SRC += lib/ustar.c					# Unix standard tar format utilities.
 
 # Kernel-specific library code.
 lib/kernel_SRC  = lib/kernel/debug.c	# Debug helpers.
-lib/kernel_SRC += lib/kernel/list.c	# Doubly-linked lists.
+lib/kernel_SRC += lib/kernel/list.c		# Doubly-linked lists.
 lib/kernel_SRC += lib/kernel/bitmap.c	# Bitmaps.
-lib/kernel_SRC += lib/kernel/hash.c	# Hash tables.
+lib/kernel_SRC += lib/kernel/hash.c		# Hash tables.
 lib/kernel_SRC += lib/kernel/console.c	# printf(), putchar().
 
 # User process code.
-kernel_SRC += kernel/process.c		# Process loading.
-kernel_SRC += kernel/pagedir.c		# Page directories.
-kernel_SRC += kernel/exception.c	# User exception handler.
-kernel_SRC += kernel/syscall.c		# System call handler.
-kernel_SRC += kernel/gdt.c		# GDT initialization.
-kernel_SRC += kernel/tss.c		# TSS management.
+kernel_SRC += kernel/process.c			# Process loading.
+kernel_SRC += kernel/pagedir.c			# Page directories.
+kernel_SRC += kernel/exception.c		# User exception handler.
+kernel_SRC += kernel/syscall.c			# System call handler.
+kernel_SRC += kernel/gdt.c				# GDT initialization.
+kernel_SRC += kernel/tss.c				# TSS management.
 
-# No virtual memory code yet.
-#vm_SRC = vm/file.c			# Some file.
+# Virtual memory code.
+vm_SRC = vm/frame.c						# Frame table.
+vm_SRC += vm/page.c						# Supplemental page table.
+vm_SRC += vm/swap.c						# Swapping management.
 
 # Filesystem code.
-filesys_SRC  = filesys/filesys.c	# Filesystem core.
-filesys_SRC += filesys/free-map.c	# Free sector bitmap.
-filesys_SRC += filesys/file.c		# Files.
-filesys_SRC += filesys/directory.c	# Directories.
-filesys_SRC += filesys/inode.c		# File headers.
-filesys_SRC += filesys/fsutil.c		# Utilities.
+filesys_SRC  = filesys/filesys.c		# Filesystem core.
+filesys_SRC += filesys/free-map.c		# Free sector bitmap.
+filesys_SRC += filesys/file.c			# Files.
+filesys_SRC += filesys/directory.c		# Directories.
+filesys_SRC += filesys/inode.c			# File headers.
+filesys_SRC += filesys/fsutil.c			# Utilities.
 
 SOURCES = $(foreach dir,$(KERNEL_SUBDIRS),$($(dir)_SRC))
 OBJECTS = $(patsubst %.c,%.o,$(patsubst %.S,%.o,$(SOURCES)))

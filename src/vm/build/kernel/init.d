@@ -11,5 +11,6 @@ kernel/init.o: ../../kernel/init.c ../../kernel/init.h ../../lib/debug.h \
   ../../kernel/thread.h ../../lib/kernel/list.h ../../kernel/synch.h \
   ../../filesys/file.h ../../filesys/off_t.h ../../kernel/process.h \
   ../../kernel/exception.h ../../kernel/gdt.h ../../kernel/syscall.h \
-  ../../kernel/tss.h ../../devices/block.h ../../devices/ide.h \
-  ../../filesys/filesys.h ../../filesys/fsutil.h
+  ../../kernel/tss.h ../../vm/frame.h ../../kernel/palloc.h \
+  ../../devices/block.h ../../devices/ide.h ../../filesys/filesys.h \
+  ../../filesys/fsutil.h

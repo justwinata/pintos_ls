@@ -17,7 +17,7 @@
  |
  |   Known Bugs:  None.
  |
-/******************************************************************************/
+******************************************************************************/
 
 /////////////////
 //             //
@@ -72,7 +72,9 @@
 #include "vm/page.h"
 #include "filesys/file.h"
 #include "filesys/off_t.h"
-#include "threads/synch.h"
+#include "kernel/malloc.h"
+#include "kernel/synch.h"
+#include "vm/page.h"
 
 /////////////////////////
 //                     //
@@ -96,9 +98,10 @@ struct page
 	void *addr;					/* Virtual address of page */
 	bool loaded;				/* Page is loaded from file or not */
 	bool swapped;				/* Page is swapped or not */
-	uint number;				/* Assignment number to designate order of 
+	int16_t zero_bytes;			/* Amount of page to be zeroed */
+	uint32_t number;			/* Assignment number to designate order of 
 									creation or being swapped in */
-	uint size;					/* Size of data */
+	uint32_t size;				/* Size of data */
 	void *proc_addr;			/* Address of process (thread) to which page 
 									belongs */
 	bool writable;				/* Page is writable or not*/
@@ -114,11 +117,12 @@ struct page
 //              //
 //////////////////
 
-unsigned page_hash (const struct hash_elem *spt_elem, void *aux UNUSED);
-bool page_less (const struct hash_elem *first, const struct hash_elem *second, void *aux UNUSED);
-struct page *page_lookup (void *address);
-struct page *add_page (void *addr);
-void remove_page (struct *page);
+void spt_init (void);
+void remove_page (struct page *);
+unsigned page_hash (const struct hash_elem *, void *);
+bool page_less (const struct hash_elem *, const struct hash_elem *, void *);
+struct page *add_page (void *);
+struct page *page_lookup (void *);
 
 /////////////////
 //             //

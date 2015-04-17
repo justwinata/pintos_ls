@@ -1,14 +1,67 @@
+/******************************************************************************
+ |   Assignment:  PintOS Part 1 - Virtual Memory
+ |
+ |      Authors:  Chukwudi Iwueze, Katie Park, Justin Winata, Jesse Wright
+ |     Language:  ANSI C99 (Ja?)
+ |
+ |        Class:  CS439
+ |   Instructor:  Rellermeyer, Jan S.
+ |
+ +-----------------------------------------------------------------------------
+ |
+ |  Description:  Vritual memory, etc.
+ |
+ |    Algorithm:  Hash table for SPT...
+ |
+ |   Required Features Not Included:  Eviction, swapping, etc.
+ |
+ |   Known Bugs:  None.
+ |
+/******************************************************************************/
+
+/////////////////
+//             //
+//  Resources  //
+//             //
+/////////////////
+
+/////////////
+//         //
+//  TO-DO  //
+//         //
+/////////////
+ 
+/*
+	TODO:
+		Figure out when you know you've run out of frames
+*/
+
+////////////////
+//            //
+//  Includes  //
+//            //
+////////////////
+
 #include <stdio.h>
-//#include "kernel/synch.h" //TODO: Consider if synchronization for hash table needed
 #include <hash.h>
+#include "kernel/synch.h"
 #include "kernel/malloc.h"
 #include "vm/frame.h"
 
-static struct hash frame_table;
+/////////////////////////
+//                     //
+//  Globale variables  //
+//                     //
+/////////////////////////
 
-/*
-EXPLAIN STRUCT FRAME
-*/
+static struct hash frame_table;	/* Frame Table */
+
+///////////////
+//           //
+//  Structs  //
+//           //
+///////////////
+
 struct frame
 {
 	struct hash_elem hash_elem;	/* Hash-table element */
@@ -16,18 +69,43 @@ struct frame
 	//pid, etc.?
 };
 
+//////////////////
+//              //
+//  Prototypes  //
+//              //
+//////////////////
+
 unsigned frame_hash (const struct hash_elem *, void *);
 bool frame_less (const struct hash_elem *, const struct hash_elem *, void *);
 struct frame* frame_lookup (void *);
 
-void
-ft_init()
-{
-	printf("Calling ft_init...");
-	hash_init(&frame_table, frame_hash, frame_less, NULL);
-	printf("ft_init successful.");
-}
+/////////////////
+//             //
+//  Functions  //
+//             //
+/////////////////
 
+/*
+ * Function:  <function_name> 
+ * --------------------
+ *	<function description>
+ *
+ *  <parameter one>: <parameter description>
+ *
+ *  returns: <return description> 
+ */
+void
+ft_init() { printf("Calling ft_init..."); hash_init(&frame_table, frame_hash, frame_less, NULL); printf("ft_init successful: %p", &frame_table); }
+
+/*
+ * Function:  <function_name> 
+ * --------------------
+ *	<function description>
+ *
+ *  <parameter one>: <parameter description>
+ *
+ *  returns: <return description> 
+ */
 unsigned
 frame_hash (const struct hash_elem *ft_elem, void *aux UNUSED)
 {
@@ -35,6 +113,15 @@ frame_hash (const struct hash_elem *ft_elem, void *aux UNUSED)
 	return hash_bytes (&frame->addr, sizeof frame->addr);
 }
 
+/*
+ * Function:  <function_name> 
+ * --------------------
+ *	<function description>
+ *
+ *  <parameter one>: <parameter description>
+ *
+ *  returns: <return description> 
+ */
 bool
 frame_less (const struct hash_elem *first, const struct hash_elem *second, void *aux UNUSED)
 {
@@ -43,6 +130,15 @@ frame_less (const struct hash_elem *first, const struct hash_elem *second, void 
 	return a->addr < b->addr;
 }
 
+/*
+ * Function:  <function_name> 
+ * --------------------
+ *	<function description>
+ *
+ *  <parameter one>: <parameter description>
+ *
+ *  returns: <return description> 
+ */
 struct frame*
 frame_lookup (void *address)
 {
@@ -53,6 +149,15 @@ frame_lookup (void *address)
 	return e != NULL ? hash_entry (e, struct frame, hash_elem) : NULL;
 }
 
+/*
+ * Function:  <function_name> 
+ * --------------------
+ *	<function description>
+ *
+ *  <parameter one>: <parameter description>
+ *
+ *  returns: <return description> 
+ */
 void*
 allocate_uframe(enum palloc_flags flags)
 {
@@ -66,6 +171,15 @@ allocate_uframe(enum palloc_flags flags)
 	return addr;
 }
 
+/*
+ * Function:  <function_name> 
+ * --------------------
+ *	<function description>
+ *
+ *  <parameter one>: <parameter description>
+ *
+ *  returns: <return description> 
+ */
 void
 deallocate_uframe(void *addr)
 {
@@ -80,7 +194,7 @@ deallocate_uframe(void *addr)
 	{
 		struct hash_elem *e = hash_delete(&frame_table, &f->hash_elem);
 		//TODO: Consider what we actually need to free
-		free(e);
+		free(e); //TODO: Figure out if this is needed
 		free(f);
 	}
 	//TODO: Consider if palloc_free_page call is necessary
