@@ -1,5 +1,6 @@
 #include <stdio.h>
-
+#include <hash.h>
+#include "vm/page.h"
 /*
 	Supplemental Page Table: "Gives you information about the status of virtual memory (which addresses are logicially mapped, etc.)" - Courtesy https://groups.google.com/forum/#!topic/12au-cs140/5LDnfoOMdfY
 */
@@ -35,6 +36,10 @@ struct page
 	void *proc_addr;	/* Address of process (thread) to which page belongs */
 	struct hash_elem hash_elem;
 };
+
+unsigned page_hash (const struct hash_elem *spt_elem, void *aux UNUSED);
+bool page_less (const struct hash_elem *first, const struct hash_elem *second, void *aux UNUSED);
+struct page *page_lookup (void *address);
 
 /* Take in two pages? */
 void swap(void);
