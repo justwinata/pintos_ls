@@ -71,7 +71,6 @@
 #include <hash.h>
 #include "vm/page.h"
 #include "filesys/file.h"
-#include "filesys/off_t.h"
 #include "kernel/malloc.h"
 #include "kernel/synch.h"
 #include "vm/page.h"
@@ -93,23 +92,7 @@ static struct lock lock;		/* Lock for synchronization of SPT */
 //           //
 ///////////////
 
-struct page
-{
-	void *addr;					/* Virtual address of page */
-	bool loaded;				/* Page is loaded from file or not */
-	bool swapped;				/* Page is swapped or not */
-	int16_t zero_bytes;			/* Amount of page to be zeroed */
-	uint32_t number;			/* Assignment number to designate order of 
-									creation or being swapped in */
-	uint32_t size;				/* Size of data */
-	void *proc_addr;			/* Address of process (thread) to which page 
-									belongs */
-	bool writable;				/* Page is writable or not*/
-	struct file *file;			/* The file the page is loaded from */
-	off_t ofs;					/* The offset the page is at within file */
-	struct hash_elem hash_elem;	/* The hash element used to store a page in 
-									the SPT hash-table */
-};
+/* struct page moved to page.h */
 
 //////////////////
 //              //
@@ -117,12 +100,8 @@ struct page
 //              //
 //////////////////
 
-void spt_init (void);
-void remove_page (struct page *);
 unsigned page_hash (const struct hash_elem *, void *);
 bool page_less (const struct hash_elem *, const struct hash_elem *, void *);
-struct page *add_page (void *);
-struct page *page_lookup (void *);
 
 /////////////////
 //             //
@@ -146,12 +125,15 @@ struct page *page_lookup (void *);
 struct page *
 add_page (void *addr)
 {
+	printf("Calling add_page for %p\n", addr);
 	lock_acquire (&lock);
+	printf("Lock acquired for %p\n", addr);
     struct hash_elem *elem = (struct hash_elem *) malloc (sizeof (struct hash_elem));
     struct page *page = hash_entry (elem, struct page, hash_elem);
     page->addr = addr;
     hash_insert (&spt, &page->hash_elem);
     lock_release (&lock);
+    printf("add_page successful for addr %p in page %p\n", addr, page);
     return page;
 }
 
@@ -167,11 +149,14 @@ add_page (void *addr)
 void
 remove_page (struct page *page)
 {
+	printf("Calling remvoe_page for %p\n", page);
 	lock_acquire (&lock);
+	printf("Lock acquired for %p\n", page);
 	struct hash_elem *e = hash_delete (&spt, &page->hash_elem);
 	free (page);
 	free (e); //TODO: Figure out if this is needed
 	lock_release (&lock);
+	printf("remove_page successful for addr %p in page %p\n", page);
 }
 
 /*
@@ -183,10 +168,10 @@ remove_page (struct page *page)
 void
 spt_init (void) 
 { 
-	printf("Calling spt_init..."); 
+	printf("Calling spt_init...\n"); 
 	lock_init(&lock);
 	hash_init(&spt, page_hash, page_less, NULL); 
-	printf("spt_init successful: %p", &spt); 
+	printf("spt_init successful: %p\n", &spt); 
 }
 
 /*

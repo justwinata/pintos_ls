@@ -13,3 +13,60 @@ https://groups.google.com/forum/#!topic/12au-cs140/5LDnfoOMdfY
 http://web.stanford.edu/class/cs140/projects/pintos/pintos_4.html
 http://courses.cs.vt.edu/cs3204/spring2007/pintos/Project3SessionSpring2007.ppt
 https://courses.cs.washington.edu/courses/cse451/12sp/lectures/13-hardware.support.pdf
+http://www.cs.utexas.edu/users/ans/classes/cs439/projects/pintos/WWW/pintos_6.html#SEC108 (Synchronization)
+http://www.cs.swarthmore.edu/~newhall/unixhelp/c_codestyle.html (comment styles)
+http://www.cs.arizona.edu/~mccann/styletemplatesCP.html
+
+/*
+ * Function:  <function_name> 
+ * --------------------
+ *	<function description>
+ *
+ *  <parameter one>: <parameter description>
+ *
+ *  returns: <return description> 
+ */
+-Courtesy http://www.cs.swarthmore.edu/~newhall/unixhelp/c_codestyle.html
+
+/******************************************************************************
+ |   Assignment:  PintOS Part X - <Title>
+ |
+ |      Authors:  Chukwudi Iwueze, Katie Park, Justin Winata, Jesse Wright
+ |     Language:  ANSI C99 (Ja?)
+ |
+ |        Class:  CS439
+ |   Instructor:  Rellermeyer, Jan S.
+ |
+ +-----------------------------------------------------------------------------
+ |
+ |  Description:  DESCRIBE THE PROBLEM THAT THIS PROGRAM WAS WRITTEN TO
+ |      SOLVE.
+ |
+ |        Input:  DESCRIBE THE INPUT THAT THE PROGRAM REQUIRES.
+ |
+ |       Output:  DESCRIBE THE OUTPUT THAT THE PROGRAM PRODUCES.
+ |
+ |    Algorithm:  OUTLINE THE APPROACH USED BY THE PROGRAM TO SOLVE THE
+ |      PROBLEM.
+ |
+ |   Required Features Not Included:  DESCRIBE HERE ANY REQUIREMENTS OF
+ |      THE ASSIGNMENT THAT THE PROGRAM DOES NOT ATTEMPT TO SOLVE.
+ |
+ |   Known Bugs:  IF THE PROGRAM DOES NOT FUNCTION CORRECTLY IN SOME
+ |      SITUATIONS, DESCRIBE THE SITUATIONS AND PROBLEMS HERE.
+ |
+/******************************************************************************/
+-Courtesy http://www.cs.arizona.edu/~mccann/styletemplatesCP.html
+
+ /* From process.c toward end of load_segment function */
+  //file_seek (file, ofs);
+  /* Old loop structure that contained the code now in load_page in 
+        exception.c for page-fault handling */
+  /* MAIN LOOP BEGIN */
+  /*
+  while (read_bytes > 0 || zero_bytes > 0) 
+    {
+      
+    }
+  */
+  /* MAIN LOOP END */

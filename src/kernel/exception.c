@@ -1,9 +1,14 @@
 #include "kernel/exception.h"
 #include <inttypes.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "kernel/gdt.h"
 #include "kernel/interrupt.h"
 #include "kernel/thread.h"
+#include "kernel/vaddr.h"
+#include "kernel/process.h"
+#include "kernel/pagedir.h"
 #include "vm/frame.h"
 #include "vm/page.h"
 
@@ -12,6 +17,8 @@ static long long page_fault_cnt;
 
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
+
+static bool load_page(void *);
 
 /* Registers handlers for interrupts that can be caused by user
    programs.
@@ -173,7 +180,7 @@ page_fault (struct intr_frame *f)
     Courtesy https://courses.cs.washington.edu/courses/cse451/12sp/lectures/13-hardware.support.pdf (slides 3-6)
   */
 
-    load_page ((void *)(fault_addr - fault_addr % PGSIZE));
+    load_page ((void *)((int) fault_addr - (int) fault_addr % (int) PGSIZE));
 }
 
 /*
@@ -189,14 +196,12 @@ page_fault (struct intr_frame *f)
  *
  *  addr: the address on which the halted process faulted
  */
-void
+bool
 load_page(void *addr)
 {
   /* Calculate how to fill this page.
      We will read PAGE_READ_BYTES bytes from FILE
      and zero the final PAGE_ZERO_BYTES bytes. */
-  size_t page_read_bytes = PGSIZE;  //read_bytes < PGSIZE ? read_bytes : PGSIZE;
-  size_t page_zero_bytes = 0;       //PGSIZE - page_read_bytes;
 
   struct page *page = page_lookup (addr);
 
@@ -204,9 +209,10 @@ load_page(void *addr)
      a part of the executable section of a process. In that case, it would 
      also have a null offset (ofs). */
 
-  if(page->swapped)
+  if(!page || page->swapped) // Page is null or swapped - null is bad
   {
     //TODO: Implement swapping and stuff
+    return false; //Faile for now :(    --    Could also panic kernel
   }
 
   /* Get a page of memory. */
@@ -216,16 +222,17 @@ load_page(void *addr)
     return false;
 
   /* Load this page. */
-  file_seek (page->filefile, page->ofs);
-  if (file_read (page->file, kpage, page_read_bytes) != (int) page_read_bytes)
+  file_seek (page->file, page->ofs);
+  if (file_read (page->file, kpage, page->read_bytes) != (int) page->read_bytes)
     {
       deallocate_uframe (kpage);
       return false; 
     }
-  memset (kpage + page_read_bytes, 0, page_zero_bytes);
+    
+  memset (kpage + page->read_bytes, 0, page->zero_bytes);
 
   /* Add the page to the process's address space. */
-  if (!install_page (upage, kpage, writable)) 
+  if (!install_page (page->addr, kpage, page->writable)) 
     {
       deallocate_uframe (kpage);
       return false; 
@@ -233,9 +240,20 @@ load_page(void *addr)
 
   /* Mark the page as loaded */
   page->loaded = true;
-  /* Advance. */
-  // read_bytes -= page_read_bytes;
-  // zero_bytes -= page_zero_bytes;
-  // upage += PGSIZE;
+
+  return true;
+}
+
+
+/* Copied directly from process.c for use by exception.c in load_page */
+static bool
+install_page (void *upage, void *kpage, bool writable)
+{
+  struct thread *t = thread_current ();
+
+  /* Verify that there's not already a page at that virtual
+     address, then map our page there. */
+  return (pagedir_get_page (t->pagedir, upage) == NULL
+          && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
 

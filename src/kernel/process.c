@@ -18,6 +18,7 @@
 #include "kernel/thread.h"
 #include "kernel/vaddr.h"
 #include "vm/frame.h"
+#include "vm/page.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *file_args, void (**eip) (void), void **esp);
@@ -474,40 +475,44 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
-  file_seek (file, ofs);
-  while (read_bytes > 0 || zero_bytes > 0) 
-    {
-      /* Calculate how to fill this page.
-         We will read PAGE_READ_BYTES bytes from FILE
-         and zero the final PAGE_ZERO_BYTES bytes. */
-      size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
-      size_t page_zero_bytes = PGSIZE - page_read_bytes;
+  /* Mark pages in SPT. Here, for lazy loading, no pages will actually be 
+     loaded from the executable's corresponding file on disk. Rather, in the 
+     page-fault handler in exception.c, pages will be loaded when a process 
+     tries to load them and subsequently page faults. To allow this, however, 
+     pages must be added to the SPT to keep track of which are loaded and 
+     which are not. */
+  uint32_t num_pages = (read_bytes + zero_bytes) / PGSIZE;
+  void *addr = upage;
+  uint32_t count;
 
-      /* Get a page of memory. */
-      uint8_t *kpage = allocate_uframe(PAL_USER); //palloc_get_page (PAL_USER);
-      if (kpage == NULL)
-        return false;
+  for(count = 0; count < num_pages; count++)
+  {
+    size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+    size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
-          deallocate_uframe (kpage);
-          return false; 
-        }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
+    /* Add page to SPT and set initial values */
+    struct page *page = add_page (addr);
+    page->loaded = false;
+    page->swapped = false;
+    page->is_stack = false;
+    page->number = count;
+    page->zero_bytes = page_zero_bytes;
+    page->read_bytes = page_read_bytes;
+    page->size = PGSIZE;
+    page->writable = writable;
+    page->file = file;
+    page->ofs = ofs;
+    ofs += page->size;
+    /* Page added and values set. */
 
-      /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
-        {
-          deallocate_uframe (kpage);
-          return false; 
-        }
+    /* Advance */
+    read_bytes -= page_read_bytes;
+    zero_bytes -= page_zero_bytes;
+    //upage += PGSIZE;
+    addr += page->size;
+  }
+  /* Pages marked. */
 
-      /* Advance. */
-      read_bytes -= page_read_bytes;
-      zero_bytes -= page_zero_bytes;
-      upage += PGSIZE;
-    }
   return true;
 }
 
@@ -523,11 +528,24 @@ setup_stack (void **esp, const char *file_args)
   int total_bytes;
   int argc = 0;
   bool success = false;
+  bool writable = true;
 
+  /* Add frame to FT and allocate */
   kpage = allocate_uframe(PAL_USER | PAL_ZERO); //palloc_get_page (PAL_USER | PAL_ZERO);
+
+  /* Add page to SPT */
+  struct page *page = add_page (kpage);
+  page->loaded = true;
+  page->swapped = false;
+  page->is_stack = true;
+  page->number = 0;
+  page->size = PGSIZE;
+  page->writable = writable;
+  /* Page added. */
+
   if (kpage != NULL) 
     {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, writable);
       if (success)
         {
           /* Extract the TOTAL_BYTES to push initially, and decrement
@@ -551,7 +569,7 @@ setup_stack (void **esp, const char *file_args)
           do
             {
               total_bytes--;
-              if (esp_char[total_bytes - 1] == '\0')
+              if (esp_char[total_bytes - 1] == '\0M')
                 {
                   esp_uint--;
                   *esp_uint = (unsigned int) &esp_char[total_bytes];
@@ -580,7 +598,12 @@ setup_stack (void **esp, const char *file_args)
           //hex_dump ((uintptr_t) *esp, *esp, (size_t) (PHYS_BASE - *esp), 1);
         }
       else
+      {
+        /* Remove frame from frame table and page from page table */
         deallocate_uframe (kpage);
+        remove_page (page);
+        /* Removed. */
+      }
     }
   return success;
 }

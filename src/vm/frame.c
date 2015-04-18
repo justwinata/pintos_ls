@@ -62,12 +62,7 @@ static struct hash frame_table;	/* Frame Table */
 //           //
 ///////////////
 
-struct frame
-{
-	struct hash_elem hash_elem;	/* Hash-table element */
-	void *addr;					/* Physical address of frame */
-	//pid, etc.?
-};
+//struct frame moved to frame.h
 
 //////////////////
 //              //
@@ -95,7 +90,7 @@ struct frame* frame_lookup (void *);
  *  returns: <return description> 
  */
 void
-ft_init() { printf("Calling ft_init..."); hash_init(&frame_table, frame_hash, frame_less, NULL); printf("ft_init successful: %p", &frame_table); }
+ft_init() { printf("Calling ft_init...\n"); hash_init(&frame_table, frame_hash, frame_less, NULL); printf("ft_init successful: %p\n", &frame_table); }
 
 /*
  * Function:  <function_name> 
@@ -161,13 +156,13 @@ frame_lookup (void *address)
 void*
 allocate_uframe(enum palloc_flags flags)
 {
-	printf("Calling allocate_uframe...");
+	printf("Calling allocate_uframe...\n");
 	void *addr = palloc_get_page (flags | PAL_ASSERT);
 	struct hash_elem *elem = (struct hash_elem *) malloc (sizeof (struct hash_elem));
 	struct frame *frame = hash_entry (elem, struct frame, hash_elem);
 	frame->addr = addr;
 	hash_insert(&frame_table, &frame->hash_elem);
-	printf("allocate_uframe successful. Memory assigned at: %p", addr);
+	printf("allocate_uframe successful. Memory assigned at: %p\n", addr);
 	return addr;
 }
 
@@ -183,12 +178,12 @@ allocate_uframe(enum palloc_flags flags)
 void
 deallocate_uframe(void *addr)
 {
-	printf("Calling deallocate_uframe for %p", addr);
+	printf("Calling deallocate_uframe for %p\n", addr);
 	struct frame *f = frame_lookup(addr);
 
 	if(!f)
 	{
-		printf("WARNING: Attempting to delete non-existent frame from frame_table! %p", addr);
+		printf("WARNING: Attempting to delete non-existent frame from frame_table! %p\n", addr);
 	}
 	else
 	{
@@ -199,5 +194,5 @@ deallocate_uframe(void *addr)
 	}
 	//TODO: Consider if palloc_free_page call is necessary
 	palloc_free_page (addr);
-	printf("deallocate_uframe successful for %p", addr);
+	printf("deallocate_uframe successful for %p in frame %p\n", addr, f);
 }
