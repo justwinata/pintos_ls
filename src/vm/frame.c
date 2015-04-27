@@ -55,6 +55,7 @@
 /////////////////////////
 
 static struct hash frame_table;	/* Frame Table */
+static struct lock lock;		/*  */
 
 ///////////////
 //           //
@@ -157,11 +158,15 @@ void*
 allocate_uframe(enum palloc_flags flags)
 {
 	printf("Calling allocate_uframe...\n");
+	lock_acquire(&lock)
+	printf("Lock acquired in allocate_uframe for addr %p\n", addr);
 	void *addr = palloc_get_page (flags | PAL_ASSERT);
 	struct hash_elem *elem = (struct hash_elem *) malloc (sizeof (struct hash_elem));
 	struct frame *frame = hash_entry (elem, struct frame, hash_elem);
 	frame->addr = addr;
 	hash_insert(&frame_table, &frame->hash_elem);
+	lock_release(&lock);
+	printf("Lock released in allocate_uframe for addr %p\n", addr);
 	printf("allocate_uframe successful. Memory assigned at: %p\n", addr);
 	return addr;
 }
@@ -179,6 +184,8 @@ void
 deallocate_uframe(void *addr)
 {
 	printf("Calling deallocate_uframe for %p\n", addr);
+	lock_acquire(&lock);
+	printf("Lock acquired in deallocate_uframe for frame addr %p\n", addr);
 	struct frame *f = frame_lookup(addr);
 
 	if(!f)
@@ -194,5 +201,7 @@ deallocate_uframe(void *addr)
 	}
 	//TODO: Consider if palloc_free_page call is necessary
 	palloc_free_page (addr);
+	lock_release(&lock);
+	printf("Lock released in deallocate_uframe for frame addr %p\n", addr);
 	printf("deallocate_uframe successful for %p in frame %p\n", addr, f);
 }

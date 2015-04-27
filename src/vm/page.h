@@ -7,7 +7,7 @@
 
 struct page
 {
-	void *addr;				/* Virtual address of page */
+	void *addr;					/* Virtual address of page */
 	bool loaded;				/* Page is loaded from file or not */
 	bool swapped;				/* Page is swapped or not */
 	bool is_stack;				/* Page is part of a prcoess's stack or not */

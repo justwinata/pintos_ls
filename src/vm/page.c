@@ -125,14 +125,15 @@ bool page_less (const struct hash_elem *, const struct hash_elem *, void *);
 struct page *
 add_page (void *addr)
 {
-	printf("Calling add_page for %p\n", addr);
+	printf("Calling add_page for addr %p\n", addr);
 	lock_acquire (&lock);
-	printf("Lock acquired for %p\n", addr);
+	printf("Lock acquired in add_page for %p\n", page);
     struct hash_elem *elem = (struct hash_elem *) malloc (sizeof (struct hash_elem));
     struct page *page = hash_entry (elem, struct page, hash_elem);
     page->addr = addr;
     hash_insert (&spt, &page->hash_elem);
     lock_release (&lock);
+    printf("Lock released in add_page for addr %p\n", page);
     printf("add_page successful for addr %p in page %p\n", addr, page);
     return page;
 }
@@ -151,11 +152,12 @@ remove_page (struct page *page)
 {
 	printf("Calling remvoe_page for %p\n", page);
 	lock_acquire (&lock);
-	printf("Lock acquired for %p\n", page);
+	printf("Lock acquired in release_page for page addr %p\n", page);
 	struct hash_elem *e = hash_delete (&spt, &page->hash_elem);
 	free (page);
 	free (e); //TODO: Figure out if this is needed
 	lock_release (&lock);
+	printf("lock released in remove_page for page addr %p\n", page);
 	printf("remove_page successful for addr %p in page %p\n", page);
 }
 
@@ -167,10 +169,10 @@ remove_page (struct page *page)
  */
 void
 spt_init (void) 
-{ 
+{
 	printf("Calling spt_init...\n"); 
 	lock_init(&lock);
-	hash_init(&spt, page_hash, page_less, NULL); 
+	hash_init(&spt, page_hash, page_less, NULL);
 	printf("spt_init successful: %p\n", &spt); 
 }
 
