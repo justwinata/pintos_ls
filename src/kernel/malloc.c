@@ -28,7 +28,7 @@
    blocks, we remove all of the arena's blocks from the free list
    and give the arena back to the page allocator.
 
-   We can't handle blocks bigger than 2 kB using this scheme,
+   We can't handle blocks bigger than 2 kB using this scheme
    because they're too big to fit in a single page with a
    descriptor.  We handle those by allocating contiguous pages
    with the page allocator and sticking the allocation size at

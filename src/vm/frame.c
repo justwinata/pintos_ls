@@ -17,7 +17,7 @@
  |
  |   Known Bugs:  None.
  |
-/******************************************************************************/
+*******************************************************************************/
 
 /////////////////
 //             //
@@ -158,8 +158,8 @@ void*
 allocate_uframe(enum palloc_flags flags)
 {
 	printf("Calling allocate_uframe...\n");
-	lock_acquire(&lock)
-	printf("Lock acquired in allocate_uframe for addr %p\n", addr);
+	lock_acquire(&lock);
+	printf("Lock acquired in allocate_uframe\n");
 	void *addr = palloc_get_page (flags | PAL_ASSERT);
 	struct hash_elem *elem = (struct hash_elem *) malloc (sizeof (struct hash_elem));
 	struct frame *frame = hash_entry (elem, struct frame, hash_elem);
@@ -184,24 +184,34 @@ void
 deallocate_uframe(void *addr)
 {
 	printf("Calling deallocate_uframe for %p\n", addr);
-	lock_acquire(&lock);
-	printf("Lock acquired in deallocate_uframe for frame addr %p\n", addr);
 	struct frame *f = frame_lookup(addr);
 
 	if(!f)
-	{
 		printf("WARNING: Attempting to delete non-existent frame from frame_table! %p\n", addr);
-	}
 	else
-	{
-		struct hash_elem *e = hash_delete(&frame_table, &f->hash_elem);
-		//TODO: Consider what we actually need to free
-		free(e); //TODO: Figure out if this is needed
-		free(f);
-	}
+		remove_frame(f);
+
 	//TODO: Consider if palloc_free_page call is necessary
 	palloc_free_page (addr);
-	lock_release(&lock);
-	printf("Lock released in deallocate_uframe for frame addr %p\n", addr);
+
 	printf("deallocate_uframe successful for %p in frame %p\n", addr, f);
+}
+
+void
+remove_frame(struct frame *frame)
+{
+	lock_acquire(&lock);
+	printf("Lock acquired in remove_frame for frame %p\n", frame);
+	struct hash_elem *e = hash_delete(&frame_table, &frame->hash_elem);
+	lock_release(&lock);
+	printf("Lock released in remove_frame for frame %p\n", frame);
+	//TODO: Consider what we actually need to free
+	free(e); //TODO: Figure out if this is needed
+	free(frame);
+}
+
+void
+frame_destructor(struct hash_elem *e, void *aux UNUSED)
+{
+	free(hash_entry(e, struct frame, hash_elem));	//Hope that's all...
 }

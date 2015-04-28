@@ -10,4 +10,4 @@ kernel/process.o: ../../kernel/process.c ../../kernel/process.h \
   ../../kernel/init.h ../../kernel/interrupt.h ../../kernel/palloc.h \
   ../../kernel/vaddr.h ../../vm/frame.h ../../lib/kernel/hash.h \
   ../../lib/kernel/list.h ../../kernel/palloc.h ../../vm/page.h \
-  ../../filesys/off_t.h
+  ../../filesys/off_t.h ../../kernel/pte.h

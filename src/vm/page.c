@@ -74,6 +74,7 @@
 #include "kernel/malloc.h"
 #include "kernel/synch.h"
 #include "vm/page.h"
+#include "kernel/pte.h"
 
 /////////////////////////
 //                     //
@@ -127,13 +128,13 @@ add_page (void *addr)
 {
 	printf("Calling add_page for addr %p\n", addr);
 	lock_acquire (&lock);
-	printf("Lock acquired in add_page for %p\n", page);
+	printf("Lock acquired in add_page for addr %p\n", addr);
     struct hash_elem *elem = (struct hash_elem *) malloc (sizeof (struct hash_elem));
     struct page *page = hash_entry (elem, struct page, hash_elem);
     page->addr = addr;
     hash_insert (&spt, &page->hash_elem);
     lock_release (&lock);
-    printf("Lock released in add_page for addr %p\n", page);
+    printf("Lock released in add_page for page addr %p\n", page);
     printf("add_page successful for addr %p in page %p\n", addr, page);
     return page;
 }
@@ -154,11 +155,11 @@ remove_page (struct page *page)
 	lock_acquire (&lock);
 	printf("Lock acquired in release_page for page addr %p\n", page);
 	struct hash_elem *e = hash_delete (&spt, &page->hash_elem);
-	free (page);
-	free (e); //TODO: Figure out if this is needed
 	lock_release (&lock);
 	printf("lock released in remove_page for page addr %p\n", page);
-	printf("remove_page successful for addr %p in page %p\n", page);
+	free (page);
+	free (e); //TODO: Figure out if this is needed
+	printf("remove_page successful for page %p\n", page);
 }
 
 /*
@@ -235,4 +236,10 @@ page_lookup (void *addr)
 	p.addr = addr;
 	e = hash_find (&spt, &p.hash_elem);
 	return e != NULL ? hash_entry (e, struct page, hash_elem) : NULL;
+}
+
+void
+page_destructor(struct hash_elem *e, void *aux UNUSED)
+{
+	free(hash_entry(e, struct page, hash_elem));	//Hope that's all...
 }

@@ -19,6 +19,7 @@
 #include "kernel/vaddr.h"
 #include "vm/frame.h"
 #include "vm/page.h"
+#include "kernel/pte.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *file_args, void (**eip) (void), void **esp);
@@ -190,6 +191,28 @@ process_exit (void)
   pd = cur->pagedir;
   if (pd != NULL) 
     {
+      /* Page reclamation */
+      uint32_t *pde;
+
+      if (pd == NULL)
+        return;
+
+      ASSERT (pd != init_page_dir);
+      for (pde = pd; pde < pd + pd_no (PHYS_BASE); pde++)
+        if (*pde & PTE_P) 
+          {
+            uint32_t *pt = pde_get_pt (*pde);
+            uint32_t *pte;
+            
+            for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++)
+              if (*pte & PTE_P)
+              {
+                remove_page(page_lookup((void *)pte));
+                remove_frame(frame_lookup((void *)pte));
+              }
+          }
+      /* Page reclamation complete. */
+
       /* Correct ordering here is crucial.  We must set
          cur->pagedir to NULL before switching page directories,
          so that a timer interrupt can't switch back to the

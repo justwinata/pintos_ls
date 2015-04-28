@@ -13,7 +13,9 @@ struct frame
 };
 
 void ft_init(void);
-void *allocate_uframe(enum palloc_flags flags);
-void deallocate_uframe(void *addr);
+void remove_frame(struct frame *);
+struct frame *frame_lookup(void *);
+void *allocate_uframe(enum palloc_flags);
+void deallocate_uframe(void *);
 
 #endif /* vm/frame.h */

@@ -14,7 +14,6 @@
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
-
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
 
@@ -165,6 +164,37 @@ page_fault (struct intr_frame *f)
       return;
     }
 
+  // Our stuff from hereon:
+
+  int *total_bytes = (int *)(PHYS_BASE - sizeof(char) - sizeof(void *));  // USER MEMORY ACCESS - BLEH // TO-DO:
+
+  ASSERT(*total_bytes > MAX_STACK_SIZE); // WHAT DO?
+
+  if(*((int *)fault_addr) > PHYS_BASE - f->esp)
+  {
+    //page swapped?
+  }
+  else if(fault_addr > f->esp - STACK_MARGIN)  //f->esp - STACK_MARGIN < PHYS_BASE - *total_bytes) //Stack growth - STACK_MARGIN is relatively arbitrary heuristic
+  {
+    bool writable = true;
+
+    /* Add frame to FT and allocate */
+    uint8_t *kpage = allocate_uframe(PAL_USER | PAL_ZERO); //palloc_get_page (PAL_USER | PAL_ZERO);
+
+    ASSERT(kpage);  //Pls don't b null
+
+    /* Add page to SPT */
+    struct page *page = add_page (kpage);
+    page->loaded = true;
+    page->swapped = false;
+    page->is_stack = true;
+    page->number = 0;
+    page->size = PGSIZE;
+    page->writable = writable;
+    /* Page added. */
+
+    ASSERT(install_page (((uint8_t *) PHYS_BASE) - PGSIZE - *total_bytes, kpage, writable)); //Pls don't return null valu
+  }
   /*
     How does OS handle a page fault?
     • Interrupt causes system to be entered
@@ -180,7 +210,12 @@ page_fault (struct intr_frame *f)
     Courtesy https://courses.cs.washington.edu/courses/cse451/12sp/lectures/13-hardware.support.pdf (slides 3-6)
   */
 
-    load_page ((void *)((int) fault_addr - (int) fault_addr % (int) PGSIZE));
+    else  // Lazy loading
+    {
+      load_page ((void *)((int) fault_addr - (int) fault_addr % (int) PGSIZE));
+    }
+
+    //Swapping? In load_page?
 }
 
 /*
