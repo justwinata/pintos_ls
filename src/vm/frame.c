@@ -55,7 +55,7 @@
 /////////////////////////
 
 static struct hash frame_table;	/* Frame Table */
-static struct lock lock;		/*  */
+static struct lock lock;		/* Lock for synchronization of frame table */
 
 ///////////////
 //           //

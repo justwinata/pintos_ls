@@ -10,6 +10,7 @@ struct page
 	void *addr;					/* Virtual address of page */
 	bool loaded;				/* Page is loaded from file or not */
 	bool swapped;				/* Page is swapped or not */
+	uint8_t references;			/* Number of references to this page */
 	bool is_stack;				/* Page is part of a prcoess's stack or not */
 	int16_t zero_bytes;			/* Amount of page to be zeroed */
 	int16_t read_bytes;			/* Amoutn of page to be read */
@@ -29,7 +30,7 @@ void spt_init (void);
 void remove_page (struct page *);
 struct page *add_page (void *);
 struct page *page_lookup (void *);
-
+bool load_page(void *);
 static bool install_page (void *, void *, bool);
 
 #endif  /* vm/page.h */

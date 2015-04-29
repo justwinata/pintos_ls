@@ -210,85 +210,10 @@ page_fault (struct intr_frame *f)
     Courtesy https://courses.cs.washington.edu/courses/cse451/12sp/lectures/13-hardware.support.pdf (slides 3-6)
   */
 
-    else  // Lazy loading
-    {
-      load_page ((void *)((int) fault_addr - (int) fault_addr % (int) PGSIZE));
-    }
+  else  // Lazy loading
+  {
+    load_page ((void *)((int) fault_addr - (int) fault_addr % (int) PGSIZE));
+  }
 
     //Swapping? In load_page?
 }
-
-/*
- * Function:  load_page 
- * --------------------
- *  Loads pages as needed when a process page faults on memory it should have 
-      have access to but has not been loaded (lazy loading). Calculates  using 
-      the file from which the pages for the process are laoded (stored by 
-      pointer in each page entry in the SPT) and loads the page-sized section 
-      of the file. The faulting process will return to the statement on which 
-      it page faulted and resume with that same instruction, which should then 
-      continue without another page fault.
- *
- *  addr: the address on which the halted process faulted
- */
-bool
-load_page(void *addr)
-{
-  /* Calculate how to fill this page.
-     We will read PAGE_READ_BYTES bytes from FILE
-     and zero the final PAGE_ZERO_BYTES bytes. */
-
-  struct page *page = page_lookup (addr);
-
-  /* Note: a file might be null for a given page; if so, this means it is not 
-     a part of the executable section of a process. In that case, it would 
-     also have a null offset (ofs). */
-
-  if(!page || page->swapped) // Page is null or swapped - null is bad
-  {
-    //TODO: Implement swapping and stuff
-    return false; //Faile for now :(    --    Could also panic kernel
-  }
-
-  /* Get a page of memory. */
-  //Should virtual addresses be contiguous for a process? Are they already?
-  uint8_t *kpage = allocate_uframe (PAL_USER); //palloc_get_page (PAL_USER);
-  if (kpage == NULL)
-    return false;
-
-  /* Load this page. */
-  file_seek (page->file, page->ofs);
-  if (file_read (page->file, kpage, page->read_bytes) != (int) page->read_bytes)
-    {
-      deallocate_uframe (kpage);
-      return false; 
-    }
-    
-  memset (kpage + page->read_bytes, 0, page->zero_bytes);
-
-  /* Add the page to the process's address space. */
-  if (!install_page (page->addr, kpage, page->writable)) 
-    {
-      deallocate_uframe (kpage);
-      return false; 
-    }
-
-  /* Mark the page as loaded */
-  page->loaded = true;
-
-  return true;
-}
-
-
-/* Copied directly from process.c for use by exception.c in load_page */
-static bool
-install_page (void *upage, void *kpage, bool writable)
-{
-  struct thread *t = thread_current ();
-
-  /* Verify that there's not already a page at that virtual
-     address, then map our page there. */
-  return (pagedir_get_page (t->pagedir, upage) == NULL
-          && pagedir_set_page (t->pagedir, upage, kpage, writable));
-}
-

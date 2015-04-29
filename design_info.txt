@@ -16,6 +16,8 @@ https://courses.cs.washington.edu/courses/cse451/12sp/lectures/13-hardware.suppo
 http://www.cs.utexas.edu/users/ans/classes/cs439/projects/pintos/WWW/pintos_6.html#SEC108 (Synchronization)
 http://www.cs.swarthmore.edu/~newhall/unixhelp/c_codestyle.html (comment styles)
 http://www.cs.arizona.edu/~mccann/styletemplatesCP.html
+https://cs.nyu.edu/courses/spring03/V22.0202-002/lecture-11.html (local vs. global page replacement)
+https://www.cs.utah.edu/~mflatt/past-courses/cs5460/lecture10.pdf (enhanced second-chance replacement algorithm)
 
 /*
  * Function:  <function_name> 
