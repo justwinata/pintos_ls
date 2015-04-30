@@ -158,15 +158,19 @@ void*
 allocate_uframe(enum palloc_flags flags)
 {
 	printf("Calling allocate_uframe...\n");
+	
 	lock_acquire(&lock);
 	printf("Lock acquired in allocate_uframe\n");
+
 	void *addr = palloc_get_page (flags | PAL_ASSERT);
 	struct hash_elem *elem = (struct hash_elem *) malloc (sizeof (struct hash_elem));
 	struct frame *frame = hash_entry (elem, struct frame, hash_elem);
 	frame->addr = addr;
 	hash_insert(&frame_table, &frame->hash_elem);
+	
 	lock_release(&lock);
 	printf("Lock released in allocate_uframe for addr %p\n", addr);
+	
 	printf("allocate_uframe successful. Memory assigned at: %p\n", addr);
 	return addr;
 }

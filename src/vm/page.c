@@ -145,14 +145,22 @@ struct page *
 add_page (void *addr)
 {
 	printf("Calling add_page for addr %p\n", addr);
+
 	lock_acquire (&lock);
 	printf ("Lock acquired in add_page for addr %p\n", addr);
+    
+    struct thread *t = thread_current ();
+    
     struct hash_elem *elem = (struct hash_elem *) malloc (sizeof (struct hash_elem));
     struct page *page = hash_entry (elem, struct page, hash_elem);
     page->addr = addr;
+    page->pagedir = t->pagedir;
+
     hash_insert (&spt, &page->hash_elem);
+    
     lock_release (&lock);
     printf ("Lock released in add_page for page addr %p\n", page);
+    
     printf ("add_page successful for addr %p in page %p\n", addr, page);
     return page;
 }
@@ -170,11 +178,15 @@ void
 remove_page (struct page *page)
 {
 	printf ("Calling remvoe_page for %p\n", page);
+	
 	lock_acquire (&lock);
 	printf ("Lock acquired in release_page for page addr %p\n", page);
+	
 	struct hash_elem *e = hash_delete (&spt, &page->hash_elem);
+	
 	lock_release (&lock);
 	printf("lock released in remove_page for page addr %p\n", page);
+	
 	free (page);
 	free (e); //TODO: Figure out if this is needed
 	printf ("remove_page successful for page %p\n", page);
@@ -348,14 +360,19 @@ evict_page ()
 		//This is what I've done for now...
 
 	//TODO: Don't forget to add synchronization (and make sure Rellermeyer's warning in the PDF is accounted for)!
+	struct page *page;
+	uint32_t *pd;
+	bool accessed;
+	bool dirty;
+
 	bool found = false;
 
 	while (!found)
 	{
-		struct page *page = hash_entry (hash_cur (&hand), struct page, hash_elem);
-		uint32_t *pd = active_pd ();
-		bool accessed = pagedir_is_accessed (pd, page->addr);
-		bool dirty = pagedir_is_dirty (pd, page->addr);
+		page = hash_entry (hash_cur (&hand), struct page, hash_elem);
+		pd = page->pagedir;
+		accessed = pagedir_is_accessed (pd, page->addr);
+		dirty = pagedir_is_dirty (pd, page->addr);
 
 		if (!(accessed || dirty))	//TODO: et used & dirty bits!
 		{

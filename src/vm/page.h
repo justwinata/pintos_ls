@@ -8,6 +8,7 @@
 struct page
 {
 	void *addr;					/* Virtual address of page */
+	uint32_t *pagedir;			/* Page directory page is in */
 	bool loaded;				/* Page is loaded from file or not */
 	bool swapped;				/* Page is swapped or not */
 	uint8_t references;			/* Number of references to this page */
