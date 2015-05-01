@@ -109,7 +109,6 @@ static struct hash_iterator hand;	/* Iterator for use as clock hand in ESCRA */
 unsigned page_hash (const struct hash_elem *, void *);
 bool page_less (const struct hash_elem *, const struct hash_elem *, void *);
 void page_destructor (struct hash_elem *, void *);
-//static bool install_page (void *, void *, bool);
 
 /////////////////
 //             //
@@ -220,7 +219,7 @@ page_hash (const struct hash_elem *spt_elem, void *aux UNUSED)
  *	aux: an unused parameter that comes as part of the hash_table page_less 
  *		function signature
  *
- *  returns: a boolean value of whether a is less than b or not
+ *  returns: a boolean value of whether a is less than b or nott
  */
 bool
 page_less (const struct hash_elem *first, const struct hash_elem *second, void *aux UNUSED)
@@ -281,7 +280,7 @@ load_page (void *addr)
      a part of the executable section of a process. In that case, it would 
      also have a null offset (ofs). */
 
-  if(!page || page->swapped) // Page is null or swapped - null is bad
+  if(page == NULL || page->swap_index >= 0) // Page is null or swapped - null is bad
   {
     //TODO: Implement swapping and stuff
     return false; //Faile for now :(    --    Could also panic kernel
@@ -347,20 +346,24 @@ install_page (void *upage, void *kpage, bool writable)
  *  params...
  *
  */
-void
+struct page*
 evict_page (void)
 {
 	//TODO: Don't forget to add synchronization (and make sure Rellermeyer's warning in the PDF is accounted for)!
 	bool found = false;
 
+	struct page *page;
+
 	while (!found)
 	{
-		struct page *page = hash_entry (hash_cur (&hand), struct page, hash_elem);
+		page = hash_entry (hash_cur (&hand), struct page, hash_elem);
 		uint32_t *pd = page->pd;
 		bool accessed = pagedir_is_accessed (pd, page->addr);
 		bool dirty = pagedir_is_dirty (pd, page->addr);
 
 		lock_acquire(&lock);
+
+		//page->references - 1 != 0? Subtract one from references and don't clear page?
 
 		if (!(accessed || dirty))
 		{
@@ -369,6 +372,7 @@ evict_page (void)
 		}
 		else if (!accessed && dirty)
 		{
+			PANIC ("Failed to evict page %p! No write back method available!\n", page);
 			pagedir_clear_page (pd, page);
 			//write back;			//TODO: Write write-back method
 			found = true;
@@ -381,6 +385,8 @@ evict_page (void)
 		if (!hash_next (&hand))	//Advance pointer
 				hash_first (&hand, &spt);	//If reached end, start over
 	}
+
+	return page;
 }
 
 /*
@@ -395,9 +401,9 @@ print_page (struct page *page)
 {
 	//TODO: Figure out how to get PD
 	printf("Page:\t%p"
-		"\n\tPage Directory:\t%p"
+		"\n\tPage directory:\t%p"
 		"\n\tLoaded:\t%s"
-		"\n\tSwapped:\t%s"
+		"\n\tSwap index:\t%d"
 		"\n\tAccessed:\t%s"
 		"\n\tDirty:\t%s"
 		"\n\tReferences:\t%d"
@@ -417,7 +423,7 @@ print_page (struct page *page)
 		page->loaded ? "True" : "False",
 		pagedir_is_accessed (page->pd, page) ? "True" : "False",
 		pagedir_is_dirty (page->pd, page) ? "True" : "False",
-		page->swapped ? "True" : "False",
+		page->swap_index,
 		page->references,
 		page->is_stack ? "True" : "False",
 		page->zero_bytes,

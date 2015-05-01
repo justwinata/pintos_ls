@@ -66,7 +66,7 @@ kernel_SRC += kernel/tss.c				# TSS management.
 # Virtual memory code.
 vm_SRC = vm/frame.c						# Frame table.
 vm_SRC += vm/page.c						# Supplemental page table.
-#vm_SRC += vm/swap.c						# Swapping management.
+vm_SRC += vm/swap.c						# Swapping management.
 
 # Filesystem code.
 filesys_SRC  = filesys/filesys.c		# Filesystem core.
