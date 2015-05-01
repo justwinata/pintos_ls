@@ -559,7 +559,7 @@ setup_stack (void **esp, const char *file_args)
   page->loaded = true;
   page->swapped = false;
   page->is_stack = true;
-  page->number = 0;
+  page->number = 1;
   page->size = PGSIZE;
   page->writable = writable;
   /* Page added. */
