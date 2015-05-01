@@ -32,8 +32,8 @@ void remove_page (struct page *);
 struct page *add_page (void *);
 struct page *page_lookup (void *);
 bool load_page(void *);
-static bool install_page (void *, void *, bool);
-static void evict_page (void);
+bool install_page (void *, void *, bool);
+void evict_page (void);
 void print_page (struct page *);
 
 #endif  /* vm/page.h */

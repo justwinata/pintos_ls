@@ -328,7 +328,7 @@ load_page (void *addr)
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
 
-static bool
+bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
@@ -347,7 +347,7 @@ install_page (void *upage, void *kpage, bool writable)
  *  params...
  *
  */
-static void
+void
 evict_page (void)
 {
 	//TODO: Don't forget to add synchronization (and make sure Rellermeyer's warning in the PDF is accounted for)!
