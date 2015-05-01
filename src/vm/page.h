@@ -8,6 +8,7 @@
 struct page
 {
 	void *addr;					/* Virtual address of page */
+	void *pd;					/* Page directory associated with the page */
 	bool loaded;				/* Page is loaded from file or not */
 	bool swapped;				/* Page is swapped or not */
 	uint8_t references;			/* Number of references to this page */
@@ -32,5 +33,7 @@ struct page *add_page (void *);
 struct page *page_lookup (void *);
 bool load_page(void *);
 static bool install_page (void *, void *, bool);
+static void evict_page (void);
+void print_page (struct page *);
 
 #endif  /* vm/page.h */

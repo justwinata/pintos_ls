@@ -9,15 +9,15 @@
 #include "kernel/vaddr.h"
 #include "kernel/process.h"
 #include "kernel/pagedir.h"
-#include "vm/frame.h"
 #include "vm/page.h"
+#include "vm/frame.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
 
-static bool load_page(void *);
+//static bool load_page(void *);
 
 /* Registers handlers for interrupts that can be caused by user
    programs.
@@ -179,9 +179,14 @@ page_fault (struct intr_frame *f)
     bool writable = true;
 
     /* Add frame to FT and allocate */
-    uint8_t *kpage = allocate_uframe(PAL_USER | PAL_ZERO); //palloc_get_page (PAL_USER | PAL_ZERO);
+    void *kpage = allocate_uframe(PAL_USER | PAL_ZERO); //palloc_get_page (PAL_USER | PAL_ZERO);
 
-    ASSERT(kpage);  //Pls don't b null
+    while (kpage == NULL)
+    {
+      printf("Evicting page...\n");
+      evict_page ();
+      kpage = allocate_uframe(PAL_USER | PAL_ZERO);
+    }
 
     /* Add page to SPT */
     struct page *page = add_page (kpage);
@@ -193,7 +198,7 @@ page_fault (struct intr_frame *f)
     page->writable = writable;
     /* Page added. */
 
-    ASSERT(install_page (((uint8_t *) PHYS_BASE) - PGSIZE - *total_bytes, kpage, writable)); //Pls don't return null valu
+    ASSERT( install_page (((uint8_t *) PHYS_BASE) - PGSIZE - *total_bytes, kpage, writable)); //Pls don't return null valu
   }
   /*
     How does OS handle a page fault?
@@ -216,4 +221,26 @@ page_fault (struct intr_frame *f)
   }
 
     //Swapping? In load_page?
+}
+
+/* Copied directly from process.c for use by exception.c in load_page */
+/* Adds a mapping from user virtual address UPAGE to kernel
+   virtual address KPAGE to the page table.
+   If WRITABLE is true, the user process may modify the page;
+   otherwise, it is read-only.
+   UPAGE must not already be mapped.
+   KPAGE should probably be a page obtained from the user pool
+   with palloc_get_page().
+   Returns true on success, false if UPAGE is already mapped or
+   if memory allocation fails. */
+
+static bool
+install_page (void *upage, void *kpage, bool writable)
+{
+  struct thread *t = thread_current ();
+
+  /* Verify that there's not already a page at that virtual
+     address, then map our page there. */
+  return (pagedir_get_page (t->pagedir, upage) == NULL
+          && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
