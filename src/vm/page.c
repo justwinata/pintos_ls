@@ -76,6 +76,7 @@
 #include "vm/page.h"
 #include "kernel/pte.h"
 #include "kernel/pagedir.h"	//For eviction (accessed- and dirty-bit functions)
+#include "kernel/thread.h"
 
 /////////////////////////
 //                     //

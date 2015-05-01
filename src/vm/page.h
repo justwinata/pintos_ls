@@ -8,11 +8,10 @@
 struct page
 {
 	void *addr;					/* Virtual address of page */
-	uint32_t *pagedir;			/* Page directory page is in */
 	bool loaded;				/* Page is loaded from file or not */
 	bool swapped;				/* Page is swapped or not */
 	uint8_t references;			/* Number of references to this page */
-	bool is_stack;				/* Page is part of a prcoess's stack or not */
+	bool is_stack;				/* Page is part of a process's stack or not */
 	int16_t zero_bytes;			/* Amount of page to be zeroed */
 	int16_t read_bytes;			/* Amoutn of page to be read */
 	uint32_t number;			/* Assignment number to designate order of 
@@ -20,6 +19,7 @@ struct page
 	uint32_t size;				/* Size of data */
 	void *proc_addr;			/* Address of process (thread) to which page 
 									belongs */
+	uint32_t *pagedir;			/* Page directory page is in */
 	bool writable;				/* Page is writable or not*/
 	struct file *file;			/* The file the page is loaded from */
 	off_t ofs;					/* The offset the page is at within file */
