@@ -151,6 +151,7 @@ add_page (void *addr)
 {
 	intr_disable ();
 	printf("Calling add_page for addr %p\n", addr);
+
 	lock_acquire (&lock);
 	printf ("Lock acquired in add_page for addr %p\n", addr);
     
@@ -163,6 +164,7 @@ add_page (void *addr)
 
     lock_release (&lock);
     printf ("Lock released in add_page for page addr %p\n", page);
+    
     printf ("add_page successful for addr %p in page %p\n", addr, page);
     intr_enable ();
     return page;
@@ -181,11 +183,15 @@ void
 remove_page (struct page *page)
 {
 	printf ("Calling remvoe_page for %p\n", page);
+	
 	lock_acquire (&lock);
 	printf ("Lock acquired in release_page for page addr %p\n", page);
+	
 	struct hash_elem *e = hash_delete (&spt, &page->hash_elem);
+	
 	lock_release (&lock);
 	printf("lock released in remove_page for page addr %p\n", page);
+	
 	free (page);
 	free (e); //TODO: Figure out if this is needed
 	printf ("remove_page successful for page %p\n", page);
@@ -356,6 +362,11 @@ struct page*
 evict_page (void)
 {
 	//TODO: Don't forget to add synchronization (and make sure Rellermeyer's warning in the PDF is accounted for)!
+	struct page *page;
+	uint32_t *pd;
+	bool accessed;
+	bool dirty;
+
 	bool found = false;
 
 	struct page *page;
@@ -363,9 +374,9 @@ evict_page (void)
 	while (!found)
 	{
 		page = hash_entry (hash_cur (&hand), struct page, hash_elem);
-		uint32_t *pd = page->pd;
-		bool accessed = pagedir_is_accessed (pd, page->addr);
-		bool dirty = pagedir_is_dirty (pd, page->addr);
+		pd = page->pagedir;
+		accessed = pagedir_is_accessed (pd, page->addr);
+		dirty = pagedir_is_dirty (pd, page->addr);
 
 		lock_acquire(&lock);
 

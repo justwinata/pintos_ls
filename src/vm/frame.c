@@ -164,6 +164,7 @@ void*
 allocate_uframe(enum palloc_flags flags)
 {
 	printf("Calling allocate_uframe...\n");
+	
 	lock_acquire(&lock);
 	printf("Lock acquired in allocate_uframe\n");
 	
@@ -177,9 +178,11 @@ allocate_uframe(enum palloc_flags flags)
 	frame->addr = addr;
 	
 	hash_insert(&frame_table, &frame->hash_elem);
+	
 	lock_release(&lock);
 	
 	printf("Lock released in allocate_uframe for addr %p\n", addr);
+	
 	printf("allocate_uframe successful. Memory assigned at: %p\n", addr);
 	
 	return addr;
