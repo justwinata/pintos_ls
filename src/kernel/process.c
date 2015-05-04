@@ -429,8 +429,6 @@ load (const char *file_args, void (**eip) (void), void **esp)
 
 /* load() helpers. */
 
-static bool install_page (void *upage, void *kpage, bool writable);
-
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
 static bool
@@ -516,7 +514,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     /* Add page to SPT and set initial values */
     struct page *page = add_page (addr);
     page->loaded = false;
-    page->swapped = false;
+    page->swap_index = -1;
     page->is_stack = false;
     page->number = count;
     page->zero_bytes = page_zero_bytes;
@@ -559,9 +557,9 @@ setup_stack (void **esp, const char *file_args)
   /* Add page to SPT */
   struct page *page = add_page (kpage);
   page->loaded = true;
-  page->swapped = false;
+  page->swap_index = -1;
   page->is_stack = true;
-  page->number = 0;
+  page->number = 1;
   page->size = PGSIZE;
   page->writable = writable;
   /* Page added. */
@@ -630,25 +628,3 @@ setup_stack (void **esp, const char *file_args)
     }
   return success;
 }
-
-/* Adds a mapping from user virtual address UPAGE to kernel
-   virtual address KPAGE to the page table.
-   If WRITABLE is true, the user process may modify the page;
-   otherwise, it is read-only.
-   UPAGE must not already be mapped.
-   KPAGE should probably be a page obtained from the user pool
-   with palloc_get_page().
-   Returns true on success, false if UPAGE is already mapped or
-   if memory allocation fails. */
-/*
-static bool
-install_page (void *upage, void *kpage, bool writable)
-{
-  struct thread *t = thread_current ();
-
-  /* Verify that there's not already a page at that virtual
-     address, then map our page there. * /
-  return (pagedir_get_page (t->pagedir, upage) == NULL
-          && pagedir_set_page (t->pagedir, upage, kpage, writable));
-}
-*/

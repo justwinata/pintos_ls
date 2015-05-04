@@ -9,15 +9,16 @@
 #include "kernel/vaddr.h"
 #include "kernel/process.h"
 #include "kernel/pagedir.h"
-#include "vm/frame.h"
 #include "vm/page.h"
+#include "vm/frame.h"
+#include "vm/swap.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
 
-static bool load_page(void *);
+//static bool load_page(void *);
 
 /* Registers handlers for interrupts that can be caused by user
    programs.
@@ -170,30 +171,41 @@ page_fault (struct intr_frame *f)
 
   ASSERT(*total_bytes > MAX_STACK_SIZE); // WHAT DO?
 
-  if(*((int *)fault_addr) > PHYS_BASE - f->esp)
+  void *f_paddr = (void *)((int) fault_addr - (int) fault_addr % (int) PGSIZE); //Faulting address' associate page address
+  struct page *f_page = page_lookup (f_paddr);
+
+  // Swap in
+  if (f_page != NULL && f_page->swap_index >= 0)
   {
-    //page swapped?
+    // Should swap in ever consider if another page was loaded in its place? i.e., [a b c] : swap out a with d -> [d b c] -> swap back in a -> swap out d -> [a b c] -- does it cause a problem if d is overwritten? Dirty bit? (TODO: !!!)
+    swap_in (f_page); //Handled in allocate_uframe?
   }
-  else if(fault_addr > f->esp - STACK_MARGIN)  //f->esp - STACK_MARGIN < PHYS_BASE - *total_bytes) //Stack growth - STACK_MARGIN is relatively arbitrary heuristic
+  // Stack -- > or >= ? (TODO:) - Also, don't forget to look for TO-DO tags (with dash)
+  else if (fault_addr >= f->esp - STACK_MARGIN)  //f->esp - STACK_MARGIN < PHYS_BASE - *total_bytes) //Stack growth - STACK_MARGIN is relatively arbitrary heuristic
   {
     bool writable = true;
 
     /* Add frame to FT and allocate */
-    uint8_t *kpage = allocate_uframe(PAL_USER | PAL_ZERO); //palloc_get_page (PAL_USER | PAL_ZERO);
+    void *kpage = allocate_uframe(PAL_USER | PAL_ZERO); //palloc_get_page (PAL_USER | PAL_ZERO);
 
-    ASSERT(kpage);  //Pls don't b null
+    if (kpage == NULL)
+    {
+      PANIC ("Null page allocated during page fault on address:\t%p\n", fault_addr);
+      //kpage = allocate_uframe(PAL_USER | PAL_ZERO);
+    }
 
     /* Add page to SPT */
     struct page *page = add_page (kpage);
     page->loaded = true;
-    page->swapped = false;
+    page->swap_index = -1;
     page->is_stack = true;
     page->number = 0;
     page->size = PGSIZE;
     page->writable = writable;
     /* Page added. */
 
-    ASSERT(install_page (((uint8_t *) PHYS_BASE) - PGSIZE - *total_bytes, kpage, writable)); //Pls don't return null valu
+    ASSERT( install_page (((uint8_t *) PHYS_BASE) - PGSIZE - *total_bytes, kpage, writable)); //Pls don't return null valu
+    *total_bytes += PGSIZE;
   }
   /*
     How does OS handle a page fault?
@@ -209,10 +221,10 @@ page_fault (struct intr_frame *f)
 
     Courtesy https://courses.cs.washington.edu/courses/cse451/12sp/lectures/13-hardware.support.pdf (slides 3-6)
   */
-
-  else  // Lazy loading
+  // Lazy loading
+  else  
   {
-    load_page ((void *)((int) fault_addr - (int) fault_addr % (int) PGSIZE));
+    load_page (f_paddr);
   }
 
     //Swapping? In load_page?

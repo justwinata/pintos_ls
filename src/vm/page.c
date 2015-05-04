@@ -68,13 +68,16 @@
 ////////////////
 
 #include <stdio.h>
+#include <string.h>
 #include <hash.h>
 #include "vm/page.h"
 #include "filesys/file.h"
 #include "kernel/malloc.h"
 #include "kernel/synch.h"
 #include "vm/page.h"
+#include "vm/frame.h"
 #include "kernel/pte.h"
+#include "kernel/thread.h"
 #include "kernel/pagedir.h"	//For eviction (accessed- and dirty-bit functions)
 #include "kernel/thread.h"
 
@@ -106,6 +109,7 @@ static struct hash_iterator hand;	/* Iterator for use as clock hand in ESCRA */
 
 unsigned page_hash (const struct hash_elem *, void *);
 bool page_less (const struct hash_elem *, const struct hash_elem *, void *);
+void page_destructor (struct hash_elem *, void *);
 
 /////////////////
 //             //
@@ -125,7 +129,7 @@ spt_init (void)
 	printf("Calling spt_init...\n"); 
 	lock_init (&lock);
 	hash_init (&spt, page_hash, page_less, NULL);
-	hash_first (&hand, &spt)
+	hash_first (&hand, &spt);
 	printf("spt_init successful: %p\n", &spt); 
 }
 
@@ -150,15 +154,12 @@ add_page (void *addr)
 	lock_acquire (&lock);
 	printf ("Lock acquired in add_page for addr %p\n", addr);
     
-    struct thread *t = thread_current ();
-    
     struct hash_elem *elem = (struct hash_elem *) malloc (sizeof (struct hash_elem));
     struct page *page = hash_entry (elem, struct page, hash_elem);
     page->addr = addr;
-    page->pagedir = t->pagedir;
-
+    page->pd = thread_current()->pagedir;
     hash_insert (&spt, &page->hash_elem);
-    
+
     lock_release (&lock);
     printf ("Lock released in add_page for page addr %p\n", page);
     
@@ -225,7 +226,7 @@ page_hash (const struct hash_elem *spt_elem, void *aux UNUSED)
  *	aux: an unused parameter that comes as part of the hash_table page_less 
  *		function signature
  *
- *  returns: a boolean value of whether a is less than b or not
+ *  returns: a boolean value of whether a is less than b or nott
  */
 bool
 page_less (const struct hash_elem *first, const struct hash_elem *second, void *aux UNUSED)
@@ -286,7 +287,7 @@ load_page (void *addr)
      a part of the executable section of a process. In that case, it would 
      also have a null offset (ofs). */
 
-  if(!page || page->swapped) // Page is null or swapped - null is bad
+  if(page == NULL || page->swap_index >= 0) // Page is null or swapped - null is bad
   {
     //TODO: Implement swapping and stuff
     return false; //Faile for now :(    --    Could also panic kernel
@@ -332,7 +333,8 @@ load_page (void *addr)
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-static bool
+
+bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
@@ -351,15 +353,9 @@ install_page (void *upage, void *kpage, bool writable)
  *  params...
  *
  */
-void
-evict_page ()
+struct page*
+evict_page (void)
 {
-	//Still trying to figure out how to get the PD associated with a page; right now, I'm using global replacement, but each process has its own page directory.
-	//I need to figure how to get non-current page directories, or I need to go with local replacement, in which case I need to figure out how to have a single hand for each page directory...
-
-	//I think I might for now just advance the hand until it finds a page within the currently active page directory...
-		//This is what I've done for now...
-
 	//TODO: Don't forget to add synchronization (and make sure Rellermeyer's warning in the PDF is accounted for)!
 	struct page *page;
 	uint32_t *pd;
@@ -368,6 +364,8 @@ evict_page ()
 
 	bool found = false;
 
+	struct page *page;
+
 	while (!found)
 	{
 		page = hash_entry (hash_cur (&hand), struct page, hash_elem);
@@ -375,23 +373,32 @@ evict_page ()
 		accessed = pagedir_is_accessed (pd, page->addr);
 		dirty = pagedir_is_dirty (pd, page->addr);
 
-		if (!(accessed || dirty))	//TODO: et used & dirty bits!
+		lock_acquire(&lock);
+
+		//page->references - 1 != 0? Subtract one from references and don't clear page?
+
+		if (!(accessed || dirty))
 		{
-			evict;	//TODO: Write evict method
-			return;
+			pagedir_clear_page (pd, page);
+			found = true;
 		}
 		else if (!accessed && dirty)
 		{
-			evict & write back;	//TODO: Write write-back method
-			return;
+			PANIC ("Failed to evict page %p! No write back method available!\n", page);
+			pagedir_clear_page (pd, page);
+			//write back;			//TODO: Write write-back method
+			found = true;
 		}
 		else
 			pagedir_set_accessed (pd, page->addr, false);
 
-		while (pagedir_get_page (pd, page->addr) == NULL)
-			if (!hash_next (&hand))	//Advance pointer
-				hash_first (&hand);	//If reached end, start over
+		lock_release(&lock);
+
+		if (!hash_next (&hand))	//Advance pointer
+				hash_first (&hand, &spt);	//If reached end, start over
 	}
+
+	return page;
 }
 
 /*
@@ -405,28 +412,30 @@ void
 print_page (struct page *page)
 {
 	//TODO: Figure out how to get PD
-	print("Page:\t%p
-		\n\tLoaded:\t%s
-		\n\tSwapped:\t%s
-		\n\tAccessed:\t%s
-		\n\tDirty:\t%s
-		\n\tReferences:\t%d
-		\n\tStack:\t%s
-		\n\tBytes to zero:\t%d
-		\n\tBytes to read:\t%d
-		\n\tNumber:\t%d
-		\n\tSize:\t%d
-		\n\tProcess:\t%p
-		\n\tWritable:\t%s
-		\n\tFile:\t%p
-		\n\tFile offset:\t%d
-		\n\tHash element:\t%p
-		\n",
+	printf("Page:\t%p"
+		"\n\tPage directory:\t%p"
+		"\n\tLoaded:\t%s"
+		"\n\tSwap index:\t%d"
+		"\n\tAccessed:\t%s"
+		"\n\tDirty:\t%s"
+		"\n\tReferences:\t%d"
+		"\n\tStack:\t%s"
+		"\n\tBytes to zero:\t%d"
+		"\n\tBytes to read:\t%d"
+		"\n\tNumber:\t%d"
+		"\n\tSize:\t%d"
+		"\n\tProcess:\t%p"
+		"\n\tWritable:\t%s"
+		"\n\tFile:\t%p"
+		"\n\tFile offset:\t%d"
+		"\n\tHash element:\t%p"
+		"\n",
 		page->addr,
+		page->pd,
 		page->loaded ? "True" : "False",
-		pagedir_is_accessed (pd, page) ? "True" : "False",
-		pagedir_is_dirty (pd, page) ? "True" : "False",
-		page->swapped ? "True" : "False",
+		pagedir_is_accessed (page->pd, page) ? "True" : "False",
+		pagedir_is_dirty (page->pd, page) ? "True" : "False",
+		page->swap_index,
 		page->references,
 		page->is_stack ? "True" : "False",
 		page->zero_bytes,
@@ -437,5 +446,5 @@ print_page (struct page *page)
 		page->writable ? "True" : "False",
 		page->file,
 		page->ofs,
-		page->hash_elem);
+		&page->hash_elem);
 }
