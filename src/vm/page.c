@@ -79,6 +79,7 @@
 #include "kernel/pte.h"
 #include "kernel/thread.h"
 #include "kernel/pagedir.h"	//For eviction (accessed- and dirty-bit functions)
+#include "kernel/interrupt.h"
 
 /////////////////////////
 //                     //
@@ -148,6 +149,7 @@ spt_init (void)
 struct page *
 add_page (void *addr)
 {
+	intr_disable ();
 	printf("Calling add_page for addr %p\n", addr);
 	lock_acquire (&lock);
 	printf ("Lock acquired in add_page for addr %p\n", addr);
@@ -156,11 +158,13 @@ add_page (void *addr)
     struct page *page = hash_entry (elem, struct page, hash_elem);
     page->addr = addr;
     page->pd = thread_current()->pagedir;
+    page->references = 0;
     hash_insert (&spt, &page->hash_elem);
 
     lock_release (&lock);
     printf ("Lock released in add_page for page addr %p\n", page);
     printf ("add_page successful for addr %p in page %p\n", addr, page);
+    intr_enable ();
     return page;
 }
 
@@ -224,8 +228,10 @@ page_hash (const struct hash_elem *spt_elem, void *aux UNUSED)
 bool
 page_less (const struct hash_elem *first, const struct hash_elem *second, void *aux UNUSED)
 {
+	print_spt ();
 	const struct page *a = hash_entry (first, struct page, hash_elem);
 	const struct page *b = hash_entry (second, struct page, hash_elem);
+	printf("page_less return addresses: %p and %p\n", a->addr, b->addr);
 	return a->addr < b->addr;
 }
 
@@ -435,4 +441,44 @@ print_page (struct page *page)
 		page->file,
 		page->ofs,
 		&page->hash_elem);
+}
+
+void
+print_spt (void)
+{
+  struct hash_iterator hand;
+  hash_first (&hand, &spt);
+  int x = 0;
+
+  while (hash_next (&hand))
+    print_page (hash_entry (hash_cur (&hand), struct page, hash_elem));
+}
+
+void
+set_page (struct page *p,
+			bool loaded,
+			int16_t swap_index,
+			uint8_t references,
+			bool is_stack,
+			int16_t zero_bytes,
+			int16_t read_bytes,
+			uint32_t number,
+			uint32_t size,
+			void *proc_addr,
+			bool writable,
+			struct file *file,
+			off_t ofs)
+{
+	p->loaded = loaded;
+	p->swap_index = swap_index;
+	p->references = references;
+	p->is_stack = is_stack;
+	p->zero_bytes = zero_bytes;
+	p->read_bytes = read_bytes;
+	p->number = number;
+	p->size = size;
+	p->proc_addr = proc_addr;
+	p->writable = writable;
+	p->file = file;
+	p->ofs = ofs;
 }

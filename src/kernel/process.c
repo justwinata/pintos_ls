@@ -513,17 +513,8 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
     /* Add page to SPT and set initial values */
     struct page *page = add_page (addr);
-    page->loaded = false;
-    page->swap_index = -1;
-    page->is_stack = false;
-    page->number = count;
-    page->zero_bytes = page_zero_bytes;
-    page->read_bytes = page_read_bytes;
-    page->size = PGSIZE;
-    page->writable = writable;
-    page->file = file;
-    page->ofs = ofs;
-    ofs += page->size;
+    set_page (page, false, -1, 1, false, page_zero_bytes, page_read_bytes, 
+      count, PGSIZE, NULL, writable, file, PGSIZE);
     /* Page added and values set. */
 
     /* Advance */
@@ -556,12 +547,7 @@ setup_stack (void **esp, const char *file_args)
 
   /* Add page to SPT */
   struct page *page = add_page (kpage);
-  page->loaded = true;
-  page->swap_index = -1;
-  page->is_stack = true;
-  page->number = 1;
-  page->size = PGSIZE;
-  page->writable = writable;
+  set_page (page, true, -1, 1, true, 0, 0, 1, PGSIZE, NULL, writable, NULL, 0);
   /* Page added. */
 
   if (kpage != NULL) 

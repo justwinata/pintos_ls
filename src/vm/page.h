@@ -35,5 +35,19 @@ bool load_page(void *);
 bool install_page (void *, void *, bool);
 struct page *evict_page (void);
 void print_page (struct page *);
+void print_spt (void);
+void set_page (struct page *p,
+				bool loaded,
+				int16_t swap_index,
+				uint8_t references,
+				bool is_stack,
+				int16_t zero_bytes,
+				int16_t read_bytes,
+				uint32_t number,
+				uint32_t size,
+				void *proc_addr,
+				bool writable,
+				struct file *file,
+				off_t ofs);
 
 #endif  /* vm/page.h */

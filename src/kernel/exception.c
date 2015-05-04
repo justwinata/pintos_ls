@@ -144,6 +144,7 @@ page_fault (struct intr_frame *f)
      [IA32-v3a] 5.15 "Interrupt 14--Page Fault Exception
      (#PF)". */
   asm ("movl %%cr2, %0" : "=r" (fault_addr));
+  printf("Page fault in kernel: %s\n", is_kernel_vaddr(fault_addr) ? "yes." : "no.");
 
   /* Turn interrupts back on (they were only off so that we could
      be assured of reading CR2 before it changed). */
@@ -162,6 +163,7 @@ page_fault (struct intr_frame *f)
     {
       f->eip = (void (*) (void)) f->eax;
       f->eax = 0;
+      printf("OH NO!");
       return;
     }
 
@@ -196,12 +198,7 @@ page_fault (struct intr_frame *f)
 
     /* Add page to SPT */
     struct page *page = add_page (kpage);
-    page->loaded = true;
-    page->swap_index = -1;
-    page->is_stack = true;
-    page->number = 0;
-    page->size = PGSIZE;
-    page->writable = writable;
+    set_page (page, true, -1, 1, true, 0, 0, 0, PGSIZE, NULL, writable, NULL, 0);
     /* Page added. */
 
     ASSERT( install_page (((uint8_t *) PHYS_BASE) - PGSIZE - *total_bytes, kpage, writable)); //Pls don't return null valu
