@@ -166,14 +166,14 @@ page_fault (struct intr_frame *f)
       f->eip = (void (*) (void)) f->eax;
       f->eax = 0;
       printf("OH NO!");
-      return;
+      // return;
     }
 
   // Our stuff from hereon:
 
   int *total_bytes = (int *)(PHYS_BASE - sizeof(char) - sizeof(void *));  // USER MEMORY ACCESS - BLEH // TO-DO:
 
-  ASSERT(*total_bytes > MAX_STACK_SIZE); // WHAT DO?
+  // ASSERT(*total_bytes > MAX_STACK_SIZE); // WHAT DO?
 
   void *f_paddr = (void *)((int) fault_addr - (int) fault_addr % (int) PGSIZE); //Faulting address' associate page address
   struct page *f_page = spt_page_lookup (&cur->spt, f_paddr);

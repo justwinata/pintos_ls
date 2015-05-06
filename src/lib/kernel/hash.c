@@ -316,9 +316,13 @@ find_elem (struct hash *h, struct list *bucket, struct hash_elem *e)
 {
   struct list_elem *i;
 
-  for (i = list_begin (bucket); i != list_end (bucket); i = list_next (i)) 
+  for (i = list_begin (bucket); 
+    i != list_end (bucket); 
+    i = list_next (i)) 
     {
+      printf("find_elem(): i = %p\n", i);
       struct hash_elem *hi = list_elem_to_hash_elem (i);
+      printf("find_elem(): hi = %p\n", hi);
       if (!h->less (hi, e, h->aux) && !h->less (e, hi, h->aux))
         return hi; 
     }
