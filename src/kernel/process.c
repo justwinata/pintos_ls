@@ -335,6 +335,12 @@ load (const char *file_args, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
+  /* Allocate supplemental page table. */
+  hash_init (&t->spt, spt_page_hash, spt_page_less, NULL);
+  // t->spt = spt_create ();
+  if (&t->spt == NULL)
+    goto done;
+
   /* Open executable file. */
   file = filesys_open (&file_args[sizeof (int)]);
   if (file == NULL)
@@ -343,12 +349,6 @@ load (const char *file_args, void (**eip) (void), void **esp)
       goto done; 
     }
   file_deny_write (file);
-
-  /* Allocate supplemental page table. */
-  hash_init (&t->spt, spt_page_hash, spt_page_less, NULL);
-  // t->spt = spt_create ();
-  if (&t->spt == NULL)
-    goto done;
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -517,12 +517,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   uint32_t count;
 
   struct thread *cur = thread_current ();
-  if (&cur->spt == NULL) {
-    /* Allocate supplemental page table. */
-    printf("SPT wasn't created properly. Allocating in load_segment() now.\n");
-    // cur->spt = spt_create ();
-    hash_init (&cur->spt, spt_page_hash, spt_page_less, NULL);
-  }
 
   for(count = 0; count < num_pages; count++)
   {

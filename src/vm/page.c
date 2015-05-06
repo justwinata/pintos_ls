@@ -119,6 +119,7 @@
 //             //
 /////////////////
 
+// NOT USED vvv
 struct hash *
 spt_create (void)
 {
@@ -130,6 +131,7 @@ spt_create (void)
 	printf("spt_create successful: %p\n", spt);
 	return spt;
 }
+// ^^^ NOT USED
 
 void 
 spt_destroy (struct hash *spt)
@@ -175,16 +177,24 @@ spt_add_page (struct hash *spt, void *addr)
 	printf("\n\n>>>>>>>> ======================================\n");
 
 
-	struct list l;
-	// l = (struct list *) malloc(sizeof (struct list));
-	list_init(&l);
-
 	struct list_elem *elem2;
-	int x;
-	for (x = 0; x < 3; ++x) {
-		elem2 = (struct list_elem *) malloc (sizeof (struct list_elem));
-		list_push_back(&l, elem2);
-	}
+	elem2 = (struct list_elem *) malloc (sizeof (struct list_elem));
+	elem2 = (struct list_elem *) malloc (sizeof (struct list_elem));
+	elem2 = (struct list_elem *) malloc (sizeof (struct list_elem));
+
+	// struct list l;
+	// // l = (struct list *) malloc(sizeof (struct list));
+	// list_init(&l);
+
+	// struct list_elem elem2, elem3, elem4;
+	// list_push_back(&l, &elem2);
+	// list_push_back(&l, &elem3);
+	// list_push_back(&l, &elem4);
+	// int x;
+	// for (x = 0; x < 3; ++x) {
+	// 	elem2 = (struct list_elem *) malloc (sizeof (struct list_elem));
+	// 	list_push_back(&l, elem2);
+	// }
 
 	// for (x = 0; x < 3; ++x) {
 	// 	elem2 = list_pop_front(&l);
@@ -421,6 +431,7 @@ spt_install_page (void *upage, void *kpage, bool writable)
 struct page*
 spt_evict_page (struct hash *spt)
 {
+	printf("\nCalling spt_evict_page for spt %p...\n", spt);
 	//TODO: Don't forget to add synchronization (and make sure Rellermeyer's warning in the PDF is accounted for)!
 	struct hash_iterator hand;
 	struct page *page;
@@ -463,6 +474,8 @@ spt_evict_page (struct hash *spt)
 			hash_first (&hand, &cur->spt);	//If reached end, start over
 		}
 	}
+
+	printf("spt_evict_page successful!\n");
 
 	return page;
 }
