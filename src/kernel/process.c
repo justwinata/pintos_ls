@@ -185,7 +185,7 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
-  struct hash *spt;
+  struct hash spt;
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -209,7 +209,7 @@ process_exit (void)
             for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++)
               if (*pte & PTE_P)
               {
-                spt_remove_page(spt, spt_page_lookup(spt, (void *)pte));
+                spt_remove_page(&spt, spt_page_lookup(&spt, (void *)pte));
                 remove_frame(frame_lookup((void *)pte));
               }
           }
@@ -223,8 +223,7 @@ process_exit (void)
          directory, or our active page directory will be one
          that's been freed (and cleared). */
 
-      cur->spt = NULL;
-      spt_destroy (spt);
+      spt_destroy (&spt);
       cur->pagedir = NULL;
       pagedir_activate (NULL);
       pagedir_destroy (pd);
@@ -345,6 +344,12 @@ load (const char *file_args, void (**eip) (void), void **esp)
     }
   file_deny_write (file);
 
+  /* Allocate supplemental page table. */
+  hash_init (&t->spt, spt_page_hash, spt_page_less, NULL);
+  // t->spt = spt_create ();
+  if (&t->spt == NULL)
+    goto done;
+
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
       || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
@@ -419,11 +424,6 @@ load (const char *file_args, void (**eip) (void), void **esp)
 
   /* Set up stack. */
   if (!setup_stack (esp, file_args))
-    goto done;
-
-  /* Allocate supplemental page table. */
-  t->spt = spt_create ();
-  if (t->spt == NULL)
     goto done;
 
   /* Start address. */
@@ -517,6 +517,12 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   uint32_t count;
 
   struct thread *cur = thread_current ();
+  if (&cur->spt == NULL) {
+    /* Allocate supplemental page table. */
+    printf("SPT wasn't created properly. Allocating in load_segment() now.\n");
+    // cur->spt = spt_create ();
+    hash_init (&cur->spt, spt_page_hash, spt_page_less, NULL);
+  }
 
   for(count = 0; count < num_pages; count++)
   {
@@ -524,7 +530,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
     /* Add page to SPT and set initial values */
-    struct page *page = spt_add_page (cur->spt, addr);
+    struct page *page = spt_add_page (&cur->spt, addr);
     spt_set_page (page, false, -1, 1, false, page_zero_bytes, page_read_bytes, 
       count, PGSIZE, NULL, writable, file, PGSIZE);
     /* Page added and values set. */
@@ -559,7 +565,7 @@ setup_stack (void **esp, const char *file_args)
 
   /* Add page to SPT */
   struct thread *cur = thread_current ();
-  struct page *page = spt_add_page (cur->spt, kpage);
+  struct page *page = spt_add_page (&cur->spt, kpage);
   spt_set_page (page, true, -1, 1, true, 0, 0, 1, PGSIZE, NULL, writable, NULL, 0);
   /* Page added. */
 
@@ -621,7 +627,7 @@ setup_stack (void **esp, const char *file_args)
       {
         /* Remove frame from frame table and page from page table */
         deallocate_uframe (kpage);
-        spt_remove_page (cur->spt, page);
+        spt_remove_page (&cur->spt, page);
         /* Removed. */
       }
     }

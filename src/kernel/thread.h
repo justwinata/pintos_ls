@@ -136,7 +136,7 @@ struct thread
 #ifdef USERPROG
     /* Owned by kernel/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
-    struct hash *spt;                   /* Supplemental page table. */
+    struct hash spt;                    /* Supplemental page table. */
 
 #endif
 

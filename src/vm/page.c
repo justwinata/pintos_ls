@@ -107,9 +107,9 @@
 //              //
 //////////////////
 
-unsigned spt_page_hash (const struct hash_elem *, void *);
-bool spt_page_less (const struct hash_elem *, const struct hash_elem *, void *);
-void spt_page_destructor (struct hash_elem *, void *);
+// unsigned spt_page_hash (const struct hash_elem *, void *);
+// bool spt_page_less (const struct hash_elem *, const struct hash_elem *, void *);
+// void spt_page_destructor (struct hash_elem *, void *);
 
 /////////////////
 //             //
@@ -429,7 +429,7 @@ spt_evict_page (struct hash *spt)
 
 		if (!hash_next (&hand))	{ //Advance pointer
 			struct thread *cur = thread_current ();
-			hash_first (&hand, cur->spt);	//If reached end, start over
+			hash_first (&hand, &cur->spt);	//If reached end, start over
 		}
 	}
 

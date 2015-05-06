@@ -176,7 +176,7 @@ page_fault (struct intr_frame *f)
   ASSERT(*total_bytes > MAX_STACK_SIZE); // WHAT DO?
 
   void *f_paddr = (void *)((int) fault_addr - (int) fault_addr % (int) PGSIZE); //Faulting address' associate page address
-  struct page *f_page = spt_page_lookup (cur->spt, f_paddr);
+  struct page *f_page = spt_page_lookup (&cur->spt, f_paddr);
 
   // Swap in
   if (f_page != NULL && f_page->swap_index >= 0)
@@ -199,7 +199,7 @@ page_fault (struct intr_frame *f)
     }
 
     /* Add page to SPT */
-    struct page *page = spt_add_page (cur->spt, kpage);
+    struct page *page = spt_add_page (&cur->spt, kpage);
     spt_set_page (page, true, -1, 1, true, 0, 0, 0, PGSIZE, NULL, writable, NULL, 0);
     /* Page added. */
 
@@ -223,7 +223,7 @@ page_fault (struct intr_frame *f)
   // Lazy loading
   else  
   {
-    spt_load_page (cur->spt, f_paddr);
+    spt_load_page (&cur->spt, f_paddr);
   }
 
     //Swapping? In load_page?

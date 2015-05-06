@@ -28,6 +28,10 @@ struct page
 									the SPT hash-table */
 };
 
+unsigned spt_page_hash (const struct hash_elem *, void *);
+bool spt_page_less (const struct hash_elem *, const struct hash_elem *, void *);
+void spt_page_destructor (struct hash_elem *, void *);
+
 struct hash *spt_create (void);
 void spt_destroy (struct hash *);
 void spt_remove_page (struct hash *, struct page *);
