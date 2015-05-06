@@ -81,6 +81,8 @@
 #include "kernel/pagedir.h"	//For eviction (accessed- and dirty-bit functions)
 #include "kernel/interrupt.h"
 
+#include <list.h>
+
 /////////////////////////
 //                     //
 //  Globale variables  //
@@ -121,7 +123,7 @@ struct hash *
 spt_create (void)
 {
 	printf("Calling spt_create...\n");
-	struct hash *spt = (struct hash *) malloc (sizeof (struct hash *));
+	struct hash *spt = (struct hash *) malloc (sizeof (struct hash));
 	hash_init (spt, spt_page_hash, spt_page_less, NULL);
 	// hash_clear (&spt, page_destructor);
 	// hash_first (&hand, &spt);
@@ -171,6 +173,35 @@ struct page *
 spt_add_page (struct hash *spt, void *addr)
 {
 	printf("\n\n>>>>>>>> ======================================\n");
+
+
+	struct list l;
+	// l = (struct list *) malloc(sizeof (struct list));
+	list_init(&l);
+
+	struct list_elem *elem2;
+	int x;
+	for (x = 0; x < 3; ++x) {
+		elem2 = (struct list_elem *) malloc (sizeof (struct list_elem));
+		list_push_back(&l, elem2);
+	}
+
+	// for (x = 0; x < 3; ++x) {
+	// 	elem2 = list_pop_front(&l);
+	// 	free(elem2);
+	// }
+
+	// struct list_elem *e;
+	// for (e = list_begin (&l); e != list_end (&l); e = list_next (e))
+	// {
+	// 	// struct foo *f = list_entry (e, struct list_emel, elem);
+	// 	printf("test_list: %p\n", e);
+	// }
+
+
+
+
+
 	printf("Calling add_page for addr %p\n", addr);
 
 	// lock_acquire (&lock);
