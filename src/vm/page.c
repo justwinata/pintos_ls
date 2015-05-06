@@ -263,7 +263,6 @@ spt_remove_page (struct hash *spt, struct page *page)
 	// printf("lock released in remove_page for page addr %p\n", page);
 	
 	free (page);
-	free (e); //TODO: Figure out if this is needed
 	printf ("remove_page successful for page %p\n", page);
 }
 
@@ -413,6 +412,10 @@ bool
 spt_install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
+
+  printf("spt_install_page(): upage = %p\n", upage);
+  printf("spt_install_page(): kpage = %p\n", kpage);
+  printf("spt_install_page(): writable = %d\n", writable);
 
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */

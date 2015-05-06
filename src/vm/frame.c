@@ -224,7 +224,6 @@ remove_frame(struct frame *frame)
 	lock_release(&lock);
 	printf("Lock released in remove_frame for frame %p\n", frame);
 	//TODO: Consider what we actually need to free
-	free(e); //TODO: Figure out if this is needed
 	free(frame);
 }
 

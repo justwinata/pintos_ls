@@ -502,6 +502,7 @@ static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
 {
+  printf("\nCalling load_segment...\n");
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
@@ -536,6 +537,8 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     addr += page->size;
   }
   /* Pages marked. */
+
+  printf("...load_segment successful\n");
 
   return true;
 }
