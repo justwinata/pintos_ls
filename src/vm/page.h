@@ -28,27 +28,51 @@ struct page
 									the SPT hash-table */
 };
 
-void spt_init (void);
-void remove_page (struct page *);
-struct page *add_page (void *);
-struct page *page_lookup (void *);
-bool load_page(void *);
-bool install_page (void *, void *, bool);
-struct page *evict_page (void);
-void print_page (struct page *);
-void print_spt (void);
-void set_page (struct page *p,
-				bool loaded,
-				int16_t swap_index,
-				uint8_t references,
-				bool is_stack,
-				int16_t zero_bytes,
-				int16_t read_bytes,
-				uint32_t number,
-				uint32_t size,
-				void *proc_addr,
-				bool writable,
-				struct file *file,
-				off_t ofs);
+struct hash *spt_create (void);
+void spt_destroy (struct hash *);
+void spt_remove_page (struct hash *, struct page *);
+struct page *spt_add_page (struct hash *, void *);
+struct page *spt_page_lookup (struct hash *, void *);
+bool spt_load_page(struct hash *, void *);
+bool spt_install_page (void *, void *, bool);
+struct page *spt_evict_page (struct hash *);
+void spt_print_page (struct page *);
+void spt_print_spt (struct hash *);
+void spt_set_page (struct page *p,
+					bool loaded,
+					int16_t swap_index,
+					uint8_t references,
+					bool is_stack,
+					int16_t zero_bytes,
+					int16_t read_bytes,
+					uint32_t number,
+					uint32_t size,
+					void *proc_addr,
+					bool writable,
+					struct file *file,
+					off_t ofs);
+
+// void spt_init (void);
+// void remove_page (struct page *);
+// struct page *add_page (void *);
+// struct page *page_lookup (void *);
+// bool load_page(void *);
+// bool install_page (void *, void *, bool);
+// struct page *evict_page (void);
+// void print_page (struct page *);
+// void print_spt (void);
+// void set_page (struct page *p,
+// 				bool loaded,
+// 				int16_t swap_index,
+// 				uint8_t references,
+// 				bool is_stack,
+// 				int16_t zero_bytes,
+// 				int16_t read_bytes,
+// 				uint32_t number,
+// 				uint32_t size,
+// 				void *proc_addr,
+// 				bool writable,
+// 				struct file *file,
+// 				off_t ofs);
 
 #endif  /* vm/page.h */

@@ -3,4 +3,4 @@ kernel/synch.o: ../../kernel/synch.c ../../kernel/synch.h \
   ../../lib/stdint.h ../../lib/stdio.h ../../lib/debug.h \
   ../../lib/stdarg.h ../../lib/kernel/stdio.h ../../lib/string.h \
   ../../kernel/interrupt.h ../../kernel/thread.h ../../filesys/file.h \
-  ../../filesys/off_t.h
+  ../../filesys/off_t.h ../../lib/kernel/hash.h ../../lib/kernel/list.h

@@ -28,7 +28,7 @@
 #include "kernel/syscall.h"
 #include "kernel/tss.h"
 #include "vm/frame.h"
-#include "vm/page.h"
+// #include "vm/page.h"
 #include "vm/swap.h"
 #ifdef FILESYS
 #include "devices/block.h"
@@ -98,7 +98,7 @@ main (void)
   malloc_init ();
   paging_init ();
   ft_init();
-  spt_init();
+  // spt_init();
   st_init();
 
   /* Segmentation. */

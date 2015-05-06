@@ -170,8 +170,9 @@ allocate_uframe(enum palloc_flags flags)
 	
 	void *addr = palloc_get_page (flags);
 
-	if(addr == NULL)
-		swap_out (evict_page ());
+	if(addr == NULL) {
+		swap_out (spt_evict_page ());
+	}
 
 	struct hash_elem *elem = (struct hash_elem *) malloc (sizeof (struct hash_elem));
 	struct frame *frame = hash_entry (elem, struct frame, hash_elem);
