@@ -57,32 +57,36 @@ struct inode
 static block_sector_t
 byte_to_sector (const struct inode *inode, off_t pos) 
 {
-  printf("Calling byte_to_sector(%p, %d)...\n", inode, pos);
+  // printf("Calling byte_to_sector(%p, %d)...\n", inode, pos);
   ASSERT (inode != NULL);
   if (pos < inode->data.length)
     {
       size_t dir_pos = pos / BLOCK_SECTOR_SIZE;
       if (dir_pos <= DIR_BLOCK_SIZE)
       {
-        printf("byte at %d (%d) = %d\n", pos, dir_pos, inode->data.start + dir_pos);
+        // printf("byte at %d (%d) = %d\n", pos, dir_pos, inode->data.start + dir_pos);
+        // printf("...byte_to_sector() successful.\n");
         return inode->data.start + dir_pos;
       }
 
       size_t indir_pos = dir_pos - DIR_BLOCK_SIZE;
       if (dir_pos <= INDIR_BLOCK_SIZE + DIR_BLOCK_SIZE)
       {
-        printf("byte at %d (%d, %d) = %d\n", pos, dir_pos, indir_pos, *inode->data.indirect + indir_pos);
+        // printf("byte at %d (%d, %d) = %d\n", pos, dir_pos, indir_pos, *inode->data.indirect + indir_pos);
+        // printf("...byte_to_sector() successful.\n");
         return *inode->data.indirect + indir_pos;
       }
 
       size_t dbl_indir_index = indir_pos / INDIR_BLOCK_SIZE;
       size_t dbl_indir_pos = indir_pos % INDIR_BLOCK_SIZE;
-      printf("byte at %d (%d, %d, %d, %d) = %d\n", pos, dir_pos, indir_pos, dbl_indir_index, indir_pos % INDIR_BLOCK_SIZE, *(*(inode->data.doubly_indirect) + dbl_indir_index) + dbl_indir_pos);
+      // printf("byte at %d (%d, %d, %d, %d) = %d\n", pos, dir_pos, indir_pos, dbl_indir_index, indir_pos % INDIR_BLOCK_SIZE, *(*(inode->data.doubly_indirect) + dbl_indir_index) + dbl_indir_pos);
+      // printf("...byte_to_sector() successful.\n");
       return *(*(inode->data.doubly_indirect) + dbl_indir_index) + dbl_indir_pos;
     }
   else
     // printf("%d out of bounds\n", pos);
     printf("%d out of bounds (%d)\n", pos, inode->data.length);
+    // printf("...byte_to_sector() successful.\n");
     return -1;
 
 }
@@ -280,7 +284,7 @@ inode_create (block_sector_t sector, off_t length)
 }
 
 /* Reads an inode from SECTOR
-   and returns a `struct inode' that contains it.
+   and returns a 'struct inode' that contains it.
    Returns a null pointer if memory allocation fails. */
 struct inode *
 inode_open (block_sector_t sector)
@@ -375,24 +379,34 @@ off_t
 inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset) 
 {
   printf("inode.c:inode_read_at()...\n");
-  
+
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
   uint8_t *bounce = NULL;
 
+  // printf("inode.c:inode_read_at() : inode->data.length = %d\n", inode->data.length);
   while (size > 0) 
     {
+      // printf("inode.c:inode_read_at() : size = %d\n", size);
+      // printf("inode.c:inode_read_at() : offset = %d\n", offset);
+
       /* Disk sector to read, starting byte offset within sector. */
       block_sector_t sector_idx = byte_to_sector (inode, offset);
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
+      // printf("inode.c:inode_read_at() : sector_idx = %d\n", sector_idx);
+      // printf("inode.c:inode_read_at() : sector_ofs = %d\n", sector_ofs);
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
       off_t inode_left = inode_length (inode) - offset;
       int sector_left = BLOCK_SECTOR_SIZE - sector_ofs;
       int min_left = inode_left < sector_left ? inode_left : sector_left;
+      // printf("inode.c:inode_read_at() : inode_left = %d\n", inode_left);
+      // printf("inode.c:inode_read_at() : sector_left = %d\n", sector_left);
+      // printf("inode.c:inode_read_at() : min_left = %d\n", min_left);
 
       /* Number of bytes to actually copy out of this sector. */
       int chunk_size = size < min_left ? size : min_left;
+      // printf("inode.c:inode_read_at() : chunk_size = %d\n", chunk_size);
       if (chunk_size <= 0)
         break;
 
