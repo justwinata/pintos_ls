@@ -17,6 +17,11 @@ static void do_format (void);
 void
 filesys_init (bool format) 
 {
+  printf("\n\n===============================\n");
+  printf("===============================\n");
+  printf("===============================\n");
+  printf("Calling filesys_init()...\n");
+
   fs_device = block_get_role (BLOCK_FILESYS);
   if (fs_device == NULL)
     PANIC ("No file system device found, can't initialize file system.");
@@ -28,6 +33,11 @@ filesys_init (bool format)
     do_format ();
 
   free_map_open ();
+
+  printf("...filesys_init() successful\n");
+  printf("===============================\n");
+  printf("===============================\n");
+  printf("===============================\n\n\n");
 }
 
 /* Shuts down the file system module, writing any unwritten data
@@ -45,6 +55,9 @@ filesys_done (void)
 bool
 filesys_create (const char *name, off_t initial_size) 
 {
+  printf("\n\n===============================\n");
+  printf("Calling filesys_create(%s, %d)...\n", name, initial_size);
+
   block_sector_t inode_sector = 0;
   struct dir *dir = dir_open_root ();
   bool success = (dir != NULL
@@ -55,6 +68,8 @@ filesys_create (const char *name, off_t initial_size)
     free_map_release (inode_sector, 1);
   dir_close (dir);
 
+  printf("...filesys_create() successful\n");
+  printf("===============================\n\n\n");
   return success;
 }
 
@@ -66,12 +81,18 @@ filesys_create (const char *name, off_t initial_size)
 struct file *
 filesys_open (const char *name)
 {
+  printf("\n\n===============================\n");
+  printf("Calling filesys_open(%s)...\n", name);
+
   struct dir *dir = dir_open_root ();
   struct inode *inode = NULL;
 
   if (dir != NULL)
     dir_lookup (dir, name, &inode);
   dir_close (dir);
+
+  printf("...file_open() successful\n");
+  printf("===============================\n\n\n");
 
   return file_open (inode);
 }

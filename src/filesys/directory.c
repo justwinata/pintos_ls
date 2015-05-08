@@ -92,6 +92,7 @@ static bool
 lookup (const struct dir *dir, const char *name,
         struct dir_entry *ep, off_t *ofsp) 
 {
+  printf("directory.c:lookup()...\n");
   struct dir_entry e;
   size_t ofs;
   
@@ -106,8 +107,10 @@ lookup (const struct dir *dir, const char *name,
           *ep = e;
         if (ofsp != NULL)
           *ofsp = ofs;
+        printf("directory.c:...lookup()\n");
         return true;
       }
+  printf("directory.c:...lookup()\n");
   return false;
 }
 
