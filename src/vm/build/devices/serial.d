@@ -4,4 +4,4 @@ devices/serial.o: ../../devices/serial.c ../../devices/serial.h \
   ../../kernel/synch.h ../../lib/kernel/list.h ../../lib/stddef.h \
   ../../devices/timer.h ../../lib/round.h ../../kernel/io.h \
   ../../kernel/thread.h ../../kernel/synch.h ../../filesys/file.h \
-  ../../filesys/off_t.h
+  ../../filesys/off_t.h ../../lib/kernel/hash.h ../../lib/kernel/list.h

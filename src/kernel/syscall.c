@@ -1,6 +1,7 @@
 #include "kernel/syscall.h"
 #include "kernel/pagedir.h"
 #include "kernel/process.h"
+#include "kernel/exception.h"
 #include <stdio.h>
 #include <stdbool.h>
 #include <syscall-nr.h>
@@ -12,6 +13,7 @@
 #include "devices/shutdown.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "vm/page.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -21,7 +23,7 @@ syscall_init (void)
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
-bool is_valid_ptr (void *ptr);
+bool is_valid_ptr (void *ptr, struct intr_frame *);
 void halt (struct intr_frame *f);
 void exit (struct intr_frame *f);
 void exec (struct intr_frame *f);
@@ -40,7 +42,7 @@ static void
 syscall_handler (struct intr_frame *f) 
 {
   int *syscall_num = (int *) (f->esp);
-  if (!is_valid_ptr ((void *) syscall_num))
+  if (!is_valid_ptr ((void *) syscall_num, f))
     thread_exit ();
 
   switch (*syscall_num)
@@ -89,14 +91,15 @@ syscall_handler (struct intr_frame *f)
 
 /* Checks if a pointer is valid by making sure the pointer isn't NULL, is within the user memory, and mapped to a existing page. */
 bool
-is_valid_ptr (void *ptr)
+is_valid_ptr (void *ptr, struct intr_frame *f)
 {
   if (ptr == NULL)
     return false;
   if (!is_user_vaddr (ptr))
     return false;
-  if (pagedir_get_page (thread_current ()->pagedir, ptr) == NULL)
-    return false;
+  if (page_lookup (&thread_current()->spt->table, pg_round_down (ptr)) && 
+        !pagedir_get_page (thread_current ()->pagedir, ptr))  // Page is note resident but is in SPT
+      return process_pf (f, ptr, false); // Process as PF to load page (non-write)
   return true;
 }
 
@@ -119,7 +122,7 @@ exit (struct intr_frame *f)
   ASSERT (*syscall_num == SYS_EXIT);
 
   int *exit_status = syscall_num + 1;
-  if (is_valid_ptr ((void *) exit_status))
+  if (is_valid_ptr ((void *) exit_status,f ))
     thread_current ()->exit_status = *exit_status;
 
   thread_exit ();
@@ -134,8 +137,8 @@ exec (struct intr_frame *f)
   ASSERT (*syscall_num == SYS_EXEC);
 
   char **cmdline = (char **) (syscall_num + 1);
-  if (!is_valid_ptr ((void *) cmdline) ||
-      !is_valid_ptr ((void *) *cmdline))
+  if (!is_valid_ptr ((void *) cmdline, f) ||
+      !is_valid_ptr ((void *) *cmdline, f))
     thread_exit ();
 
   int pid = process_execute (*cmdline);
@@ -151,7 +154,7 @@ wait (struct intr_frame *f)
   ASSERT (*syscall_num == SYS_WAIT);
 
   tid_t *child_tid = (tid_t *) (syscall_num + 1);
-  if (!is_valid_ptr ((void *) child_tid))
+  if (!is_valid_ptr ((void *) child_tid, f))
     thread_exit ();
 
   f->eax = process_wait (*child_tid);
@@ -169,9 +172,9 @@ create (struct intr_frame *f)
 
   char **name = (char **) (syscall_num + 1);
   unsigned *initial_size = (unsigned *) (syscall_num + 2);
-  if (!is_valid_ptr ((void *) name) ||
-      !is_valid_ptr ((void *) *name) ||
-      !is_valid_ptr ((void *) initial_size))
+  if (!is_valid_ptr ((void *) name, f) ||
+      !is_valid_ptr ((void *) *name, f) ||
+      !is_valid_ptr ((void *) initial_size, f))
     {
       lock_release (&thread_filesys_lock);
       thread_exit ();
@@ -191,8 +194,8 @@ remove (struct intr_frame *f)
   ASSERT (*syscall_num == SYS_REMOVE);
 
   char **name = (char **) (syscall_num + 1);
-  if (!is_valid_ptr ((void *) name) ||
-      !is_valid_ptr ((void *) *name))
+  if (!is_valid_ptr ((void *) name, f) ||
+      !is_valid_ptr ((void *) *name, f))
     {
       lock_release (&thread_filesys_lock);
       thread_exit ();
@@ -213,8 +216,8 @@ open (struct intr_frame *f)
   ASSERT (*syscall_num == SYS_OPEN);
 
   char **name = (char **) (syscall_num + 1);
-  if (!is_valid_ptr ((void *) name) ||
-      !is_valid_ptr ((void *) *name))
+  if (!is_valid_ptr ((void *) name, f) ||
+      !is_valid_ptr ((void *) *name, f))
     {
       lock_release (&thread_filesys_lock);
       thread_exit ();
@@ -259,7 +262,7 @@ filesize (struct intr_frame *f)
   ASSERT (*syscall_num == SYS_FILESIZE);
 
   int *fd = syscall_num + 1;
-  if (!is_valid_ptr ((void *) fd))
+  if (!is_valid_ptr ((void *) fd, f))
     {
       lock_release (&thread_filesys_lock);
       thread_exit ();
@@ -297,10 +300,11 @@ read (struct intr_frame *f)
   char **buffer = (char **) (syscall_num + 2);
   unsigned *size = (unsigned *) (syscall_num + 3);
 
-  if (!is_valid_ptr ((void *) fd) ||
-      !is_valid_ptr ((void *) buffer) ||
-      !is_valid_ptr ((void *) *buffer) ||
-      !is_valid_ptr ((void *) size))
+  if (!is_valid_ptr ((void *) fd, f) ||
+      !is_valid_ptr ((void *) buffer, f) ||
+      !is_valid_ptr ((void *) *buffer, f) ||
+      !is_valid_ptr ((void *) size, f) ||
+      !is_writable (buffer, size))
     {
       lock_release (&thread_filesys_lock);
       thread_exit ();
@@ -348,10 +352,10 @@ write (struct intr_frame *f)
   char **buffer = (char **) (syscall_num + 2);
   unsigned *size = (unsigned *) (syscall_num + 3);
 
-  if (!is_valid_ptr ((void *) fd) ||
-      !is_valid_ptr ((void *) buffer) ||
-      !is_valid_ptr ((void *) *buffer) ||
-      !is_valid_ptr ((void *) size))
+  if (!is_valid_ptr ((void *) fd, f) ||
+      !is_valid_ptr ((void *) buffer, f) ||
+      !is_valid_ptr ((void *) *buffer, f) ||
+      !is_valid_ptr ((void *) size, f))
     {
       lock_release (&thread_filesys_lock);
       thread_exit ();
@@ -395,8 +399,8 @@ seek (struct intr_frame *f)
   int *fd = syscall_num + 1;
   unsigned *position = (unsigned *) (syscall_num + 2);
 
-  if (!is_valid_ptr ((void *) fd) ||
-      !is_valid_ptr ((void *) position))
+  if (!is_valid_ptr ((void *) fd, f) ||
+      !is_valid_ptr ((void *) position, f))
     {
       lock_release (&thread_filesys_lock);
       thread_exit ();
@@ -430,7 +434,7 @@ tell (struct intr_frame *f)
   ASSERT (*syscall_num == SYS_TELL);
 
   int *fd = syscall_num + 1;
-  if (!is_valid_ptr ((void *) fd))
+  if (!is_valid_ptr ((void *) fd, f))
     {
       lock_release (&thread_filesys_lock);
       thread_exit ();
@@ -464,7 +468,7 @@ close (struct intr_frame *f)
   ASSERT (*syscall_num == SYS_CLOSE);
 
   int *fd = syscall_num + 1;
-  if (!is_valid_ptr ((void *) fd))
+  if (!is_valid_ptr ((void *) fd, f))
     {
       lock_release (&thread_filesys_lock);
       thread_exit ();

@@ -9,13 +9,13 @@ struct frame
 {
 	struct hash_elem hash_elem;	/* Hash-table element */
 	void *addr;					/* Physical address of frame */
-	//pid, etc.?
 };
 
 void ft_init(void);
 void remove_frame(struct frame *);
 struct frame *frame_lookup(void *);
 void *allocate_uframe(enum palloc_flags);
-void deallocate_uframe(void *);
+void deallocate_uframe(void *, bool);
+struct frame *evict_page (void);
 
 #endif /* vm/frame.h */

@@ -192,26 +192,7 @@ process_exit (void)
   if (pd != NULL) 
     {
       /* Page reclamation */
-      uint32_t *pde;
-
-      if (pd == NULL)
-        return;
-
-      ASSERT (pd != init_page_dir);
-      for (pde = pd; pde < pd + pd_no (PHYS_BASE); pde++)
-        if (*pde & PTE_P) 
-          {
-            uint32_t *pt = pde_get_pt (*pde);
-            uint32_t *pte;
-            
-            for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++)
-              if (*pte & PTE_P)
-              {
-                remove_page(page_lookup((void *)pte));
-                remove_frame(frame_lookup((void *)pte));
-              }
-          }
-      /* Page reclamation complete. */
+      reclaim_pages (cur);
 
       /* Correct ordering here is crucial.  We must set
          cur->pagedir to NULL before switching page directories,
@@ -325,14 +306,17 @@ load (const char *file_args, void (**eip) (void), void **esp)
   bool success = false;
   int i;
 
-  /* Allocate and activate page directory. */
+  /* Allocate and activate page directory and SPT. */
   t->pagedir = pagedir_create ();
+  t->spt = spt_create ();
+
   if (t->pagedir == NULL) 
     goto done;
   process_activate ();
 
   /* Open executable file. */
   file = filesys_open (&file_args[sizeof (int)]);
+
   if (file == NULL)
     {
       printf ("load: %s: open failed\n", &file_args[sizeof (int)]);
@@ -502,6 +486,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
      tries to load them and subsequently page faults. To allow this, however, 
      pages must be added to the SPT to keep track of which are loaded and 
      which are not. */
+  struct spt *spt = thread_current ()->spt;
   uint32_t num_pages = (read_bytes + zero_bytes) / PGSIZE;
   void *addr = upage;
   uint32_t count;
@@ -512,9 +497,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
     /* Add page to SPT and set initial values */
-    struct page *page = add_page (addr);
-    set_page (page, false, -1, 1, false, page_zero_bytes, page_read_bytes, 
-      count, PGSIZE, NULL, writable, file, PGSIZE);
+    struct page *page = add_page (spt, addr);
+    set_page (page, NULL, false, -1, 1, false, page_zero_bytes, page_read_bytes, 
+      count, PGSIZE, NULL, writable, file, PGSIZE * count);
     /* Page added and values set. */
 
     /* Advance */
@@ -523,7 +508,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     //upage += PGSIZE;
     addr += page->size;
   }
-  /* Pages marked. */
 
   return true;
 }
@@ -543,20 +527,23 @@ setup_stack (void **esp, const char *file_args)
   bool writable = true;
 
   /* Add frame to FT and allocate */
-  kpage = allocate_uframe(PAL_USER | PAL_ZERO); //palloc_get_page (PAL_USER | PAL_ZERO);
-
-  /* Add page to SPT */
-  struct page *page = add_page (kpage);
-  set_page (page, true, -1, 1, true, 0, 0, 1, PGSIZE, NULL, writable, NULL, 0);
-  /* Page added. */
+  kpage = allocate_uframe (PAL_USER | PAL_ZERO); //palloc_get_page (PAL_USER | PAL_ZERO);
 
   if (kpage != NULL) 
     {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, writable);
+      void *addr = PHYS_BASE - PGSIZE;
+      success = install_page (addr, kpage, writable);
+
       if (success)
         {
+          /* Add page to SPT */
+          struct page *page = add_page (thread_current ()->spt, addr);
+          set_page (page, kpage, true, -1, 0, true, 0, 0, 1, PGSIZE, NULL, writable, NULL, 0);
+          /* Page added. */
+
           /* Extract the TOTAL_BYTES to push initially, and decrement
              ESP by that amount. */
+
           total_bytes = ((int *) file_args)[0];
           *esp = PHYS_BASE - total_bytes;
 
@@ -576,7 +563,7 @@ setup_stack (void **esp, const char *file_args)
           do
             {
               total_bytes--;
-              if (esp_char[total_bytes - 1] == '\0M')
+              if (esp_char[total_bytes - 1] == '\0')
                 {
                   esp_uint--;
                   *esp_uint = (unsigned int) &esp_char[total_bytes];
@@ -605,12 +592,44 @@ setup_stack (void **esp, const char *file_args)
           //hex_dump ((uintptr_t) *esp, *esp, (size_t) (PHYS_BASE - *esp), 1);
         }
       else
-      {
-        /* Remove frame from frame table and page from page table */
-        deallocate_uframe (kpage);
-        remove_page (page);
-        /* Removed. */
-      }
+        {
+          /* Remove frame from frame table */
+          deallocate_uframe (kpage, true);
+          /* Removed. */
+        }
     }
   return success;
+}
+
+bool
+is_stack (struct intr_frame *frame, void *fault_addr)
+{
+  return (fault_addr < PHYS_BASE) && (fault_addr >= (frame->esp - STACK_MARGIN));
+}
+
+void
+load_stack (struct intr_frame *frame, void *f_paddr)
+{
+  if(PHYS_BASE - frame->esp >= MAX_STACK_SIZE)
+  {
+    printf ("Max stack size reached.");
+    thread_exit ();
+  }
+
+  bool writable = true;
+
+  /* Add frame to FT and allocate */
+  // !!! !!! !!! TODO: Make reentrant (or something ) !!! !!! !!!
+  void *kpage = allocate_uframe (PAL_USER | PAL_ZERO); //palloc_get_page (PAL_USER | PAL_ZERO);
+
+  if (kpage == NULL)
+    PANIC ("Null page allocated during page fault on address.\n");
+
+  /* Add page to SPT */
+  // !!! !!! !!! TODO: Make reentrant !!! !!! !!!
+  struct page *page = add_page (thread_current()->spt, f_paddr);
+  set_page (page, kpage, true, -1, 1, true, 0, 0, 0, PGSIZE, NULL, writable, NULL, 0);
+  /* Page added. */
+
+  ASSERT (install_page (f_paddr, kpage, writable));
 }

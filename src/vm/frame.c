@@ -47,6 +47,10 @@
 #include "kernel/synch.h"
 #include "kernel/malloc.h"
 #include "vm/frame.h"
+#include "vm/swap.h"
+#include "kernel/pagedir.h"
+
+#include "kernel/vaddr.h"
 
 /////////////////////////
 //                     //
@@ -93,10 +97,8 @@ struct frame* frame_lookup (void *);
 void
 ft_init()
 {
-	printf("Calling ft_init...\n");
 	hash_init (&frame_table, frame_hash, frame_less, NULL);
 	lock_init (&lock);
-	printf("ft_init successful: %p\n", &frame_table);
 }
 
 /*
@@ -163,27 +165,19 @@ frame_lookup (void *address)
 void*
 allocate_uframe(enum palloc_flags flags)
 {
-	printf("Calling allocate_uframe...\n");
-	
 	lock_acquire(&lock);
-	printf("Lock acquired in allocate_uframe\n");
 	
-	void *addr = palloc_get_page (flags);
+		void *addr = palloc_get_page (flags);
 
-	if(addr == NULL)
-		swap_out (evict_page ());
+		if(addr == NULL)
+			swap_out (evict_page ());
 
-	struct hash_elem *elem = (struct hash_elem *) malloc (sizeof (struct hash_elem));
-	struct frame *frame = hash_entry (elem, struct frame, hash_elem);
-	frame->addr = addr;
-	
-	hash_insert(&frame_table, &frame->hash_elem);
+		struct frame *frame = (struct frame *) malloc (sizeof (struct frame));
+		frame->addr = addr;
+		
+		hash_insert(&frame_table, &frame->hash_elem);
 	
 	lock_release(&lock);
-	
-	printf("Lock released in allocate_uframe for addr %p\n", addr);
-	
-	printf("allocate_uframe successful. Memory assigned at: %p\n", addr);
 	
 	return addr;
 }
@@ -198,37 +192,78 @@ allocate_uframe(enum palloc_flags flags)
  *  returns: <return description> 
  */
 void
-deallocate_uframe(void *addr)
+deallocate_uframe(void *addr, bool palloc_free)
 {
-	printf("Calling deallocate_uframe for %p\n", addr);
-	struct frame *f = frame_lookup(addr);
+	//TODO: Consider if free_frame option needed
+	lock_acquire (&lock);
 
-	if(!f)
-		printf("WARNING: Attempting to delete non-existent frame from frame_table! %p\n", addr);
-	else
-		remove_frame(f);
+		struct frame *frame = frame_lookup(addr);
 
-	//TODO: Consider if palloc_free_page call is necessary
-	palloc_free_page (addr);
+		if (!frame)
+			return;
 
-	printf("deallocate_uframe successful for %p in frame %p\n", addr, f);
+		ASSERT (frame);
+
+		if (palloc_free)
+			palloc_free_page (frame->addr);
+
+		hash_delete(&frame_table, &frame->hash_elem);
+		free (frame);
+
+	lock_release (&lock);
 }
 
-void
-remove_frame(struct frame *frame)
+/*
+ * Function:  evict_page
+ * --------------------
+ *	Does? Enhanced second-chance clock replacement
+ *
+ *  params...
+ *
+ */
+struct frame*
+evict_page (void)
 {
-	lock_acquire(&lock);
-	printf("Lock acquired in remove_frame for frame %p\n", frame);
-	struct hash_elem *e = hash_delete(&frame_table, &frame->hash_elem);
-	lock_release(&lock);
-	printf("Lock released in remove_frame for frame %p\n", frame);
-	//TODO: Consider what we actually need to free
-	free(e); //TODO: Figure out if this is needed
-	free(frame);
-}
+	static struct hash_iterator hand;	/* Iterator for use as clock hand in ESCRA */
+	hash_first (&hand, &frame_table);
+	hash_next (&hand);
 
-void
-frame_destructor(struct hash_elem *e, void *aux UNUSED)
-{
-	free(hash_entry(e, struct frame, hash_elem));	//Hope that's all...
+	//TODO: Hand is invalidated upon any modification of the SPT!!! D: Fix!
+	//TODO: Don't forget to add synchronization (and make sure Rellermeyer's warning in the PDF is accounted for)!
+	struct frame *frame;
+	uint32_t *pd;
+	bool accessed;
+	bool dirty;
+
+	bool found = false;
+
+	while (!found)
+	{
+		// frame = hash_entry (hash_cur (&hand), struct frame, hash_elem);
+		// pd = frame->pagedir;
+		// accessed = pagedir_is_accessed (pd, frame->addr);
+		// dirty = pagedir_is_dirty (pd, frame->addr);
+
+		// //frame->references - 1 != 0? Subtract one from references and don't clear frame?
+
+		// if (!(accessed || dirty))
+		// {
+		// 	pagedir_clear_page (pd, frame);
+		// 	found = true;
+		// }
+		// else if (!accessed && dirty)
+		// {
+		// 	PANIC ("Failed to evict frame %p! No write back method available!\n", frame);
+		// 	pagedir_clear_page (pd, frame);
+		// 	//write back;			//TODO: Write write-back method
+		// 	found = true;
+		// }
+		// else
+		// 	pagedir_set_accessed (pd, frame->addr, false);
+
+		// if (!hash_next (&hand))	//Advance pointer
+		// 		hash_first (&hand, &spt);	//If reached end, start over
+	}
+
+	return frame;
 }

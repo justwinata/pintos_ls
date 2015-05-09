@@ -76,9 +76,10 @@
 #include "kernel/synch.h"
 #include "vm/page.h"
 #include "vm/frame.h"
+#include "kernel/vaddr.h"
 #include "kernel/pte.h"
 #include "kernel/thread.h"
-#include "kernel/pagedir.h"	//For eviction (accessed- and dirty-bit functions)
+#include "kernel/pagedir.h"
 #include "kernel/interrupt.h"
 
 /////////////////////////
@@ -89,9 +90,6 @@
 
 /* Talk about the hash table used for the SPT a little bit. Make sure to 
 	mention the key is the address of a page. */
-static struct hash spt;				/* Supplemental Page Table */
-static struct lock lock;			/* Lock for synchronization of SPT */
-static struct hash_iterator hand;	/* Iterator for use as clock hand in ESCRA */
 
 ///////////////
 //           //
@@ -107,9 +105,9 @@ static struct hash_iterator hand;	/* Iterator for use as clock hand in ESCRA */
 //              //
 //////////////////
 
-unsigned page_hash (const struct hash_elem *, void *);
-bool page_less (const struct hash_elem *, const struct hash_elem *, void *);
-void page_destructor (struct hash_elem *, void *);
+static unsigned page_hash (const struct hash_elem *, void *);
+static bool page_less (const struct hash_elem *, const struct hash_elem *, void *);
+static void page_destructor (struct hash_elem *, void *);
 
 /////////////////
 //             //
@@ -123,14 +121,22 @@ void page_destructor (struct hash_elem *, void *);
  *	Initializes the hash table for the supplemental page table using hash_init 
  *		and also initializes the lock for the SPT's hash table.
  */
-void
-spt_init (void) 
+struct spt *
+spt_create (void) 
 {
-	printf("Calling spt_init...\n"); 
-	lock_init (&lock);
-	hash_init (&spt, page_hash, page_less, NULL);
-	hash_first (&hand, &spt);
-	printf("spt_init successful: %p\n", &spt); 
+	struct spt *spt = (struct spt *) malloc (sizeof (struct spt));
+	hash_init (&spt->table, page_hash, page_less, NULL);
+	lock_init (&spt->lock);
+	return spt;
+}
+
+void
+spt_destroy (struct spt *spt) 
+{
+	lock_acquire (&spt->lock);
+		hash_destroy (&spt->table, page_destructor);
+		free (spt);
+	// lock_release not needed (lock is freed)
 }
 
 /*
@@ -147,26 +153,16 @@ spt_init (void)
  *		struct for the SPT hash table
  */
 struct page *
-add_page (void *addr)
+add_page (struct spt *spt, void *addr)
 {
-	intr_disable ();
-	printf("Calling add_page for addr %p\n", addr);
+	lock_acquire (&spt->lock);
+	    struct page *page = (struct page *) malloc (sizeof (struct page));
+	    page->addr = addr;
+	    page->pd = thread_current()->pagedir;
+	    page->references = 0;
+	    hash_insert (&spt->table, &page->hash_elem);
+    lock_release (&spt->lock);
 
-	lock_acquire (&lock);
-	printf ("Lock acquired in add_page for addr %p\n", addr);
-    
-    struct hash_elem *elem = (struct hash_elem *) malloc (sizeof (struct hash_elem));
-    struct page *page = hash_entry (elem, struct page, hash_elem);
-    page->addr = addr;
-    page->pd = thread_current()->pagedir;
-    page->references = 0;
-    hash_insert (&spt, &page->hash_elem);
-
-    lock_release (&lock);
-    printf ("Lock released in add_page for page addr %p\n", page);
-    
-    printf ("add_page successful for addr %p in page %p\n", addr, page);
-    intr_enable ();
     return page;
 }
 
@@ -180,21 +176,14 @@ add_page (void *addr)
  *  page: the page to be removed from the SPT
  */
 void
-remove_page (struct page *page)
+remove_page (struct spt *spt, struct page *page)
 {
-	printf ("Calling remvoe_page for %p\n", page);
-	
-	lock_acquire (&lock);
-	printf ("Lock acquired in release_page for page addr %p\n", page);
-	
-	struct hash_elem *e = hash_delete (&spt, &page->hash_elem);
-	
-	lock_release (&lock);
-	printf("lock released in remove_page for page addr %p\n", page);
-	
-	free (page);
-	free (e); //TODO: Figure out if this is needed
-	printf ("remove_page successful for page %p\n", page);
+	lock_acquire (&spt->lock);
+		free (hash_delete (&spt->table, &page->hash_elem));
+	lock_release (&spt->lock);
+
+	//TODO: Need
+	palloc_free_page(page->addr);
 }
 
 /*
@@ -210,11 +199,11 @@ remove_page (struct page *page)
  *
  *  returns: a hash value for a page
  */
-unsigned
+static unsigned
 page_hash (const struct hash_elem *spt_elem, void *aux UNUSED)
 {
 	const struct page *page = hash_entry (spt_elem, struct page, hash_elem);
-	return hash_bytes (&page->addr, sizeof page->addr);
+	return hash_int ((int) page->addr); //bytes (&page->addr, sizeof page->addr);
 }
 
 /*
@@ -231,14 +220,23 @@ page_hash (const struct hash_elem *spt_elem, void *aux UNUSED)
  *
  *  returns: a boolean value of whether a is less than b or nott
  */
-bool
+static bool
 page_less (const struct hash_elem *first, const struct hash_elem *second, void *aux UNUSED)
 {
-	print_spt ();
 	const struct page *a = hash_entry (first, struct page, hash_elem);
 	const struct page *b = hash_entry (second, struct page, hash_elem);
-	printf("page_less return addresses: %p and %p\n", a->addr, b->addr);
 	return a->addr < b->addr;
+}
+
+/*
+ * Function:  <name>
+ * --------------------
+ *	Does?
+ */
+void
+page_destructor (struct hash_elem *elem, void *aux UNUSED)
+{
+	free (hash_entry (elem, struct page, hash_elem));
 }
 
 /*
@@ -251,19 +249,13 @@ page_less (const struct hash_elem *first, const struct hash_elem *second, void *
  *  returns: the page with the given address if found in the table or null if not
  */
 struct page*
-page_lookup (void *addr)
+page_lookup (struct hash *table, void *addr)
 {
-	struct page p;
-	struct hash_elem *e;
-	p.addr = addr;
-	e = hash_find (&spt, &p.hash_elem);
-	return e != NULL ? hash_entry (e, struct page, hash_elem) : NULL;
-}
-
-void
-page_destructor (struct hash_elem *e, void *aux UNUSED)
-{
-	free (hash_entry (e, struct page, hash_elem));	//Hope that's all...
+	struct page page;
+	struct hash_elem *elem;
+	page.addr = addr;
+	elem = hash_find (table, &page.hash_elem);
+	return elem != NULL ? hash_entry (elem, struct page, hash_elem) : NULL;
 }
 
 /*
@@ -280,51 +272,56 @@ page_destructor (struct hash_elem *e, void *aux UNUSED)
  *  addr: the address on which the halted process faulted
  */
 bool
-load_page (void *addr)
+load_page (struct spt *spt, void *addr)
 {
   /* Calculate how to fill this page.
      We will read PAGE_READ_BYTES bytes from FILE
      and zero the final PAGE_ZERO_BYTES bytes. */
+  
+    struct page *page;
+	
+	lock_acquire (&spt->lock);
+		page = page_lookup (&spt->table, addr);
+	lock_release (&spt->lock);
 
-  struct page *page = page_lookup (addr);
+	/* Note: a file might be null for a given page; if so, this means it is not 
+	 a part of the executable section of a process. In that case, it would 
+	 also have a null offset (ofs). */
 
-  /* Note: a file might be null for a given page; if so, this means it is not 
-     a part of the executable section of a process. In that case, it would 
-     also have a null offset (ofs). */
+	if(page == NULL || page->swap_index >= 0) // Page is null or swapped - null is bad
+	{
+		//TODO: Implement swapping and stuff
+		return false; //Fail for now :(    --    Could also panic kernel
+	}
 
-  if(page == NULL || page->swap_index >= 0) // Page is null or swapped - null is bad
-  {
-    //TODO: Implement swapping and stuff
-    return false; //Faile for now :(    --    Could also panic kernel
-  }
+	/* Get a page of memory. */
+	//Should virtual addresses be contiguous for a process? Are they already?
+	uint8_t *kpage = allocate_uframe (PAL_USER); //palloc_get_page (PAL_USER);
+	if (kpage == NULL)
+		return false;
 
-  /* Get a page of memory. */
-  //Should virtual addresses be contiguous for a process? Are they already?
-  uint8_t *kpage = allocate_uframe (PAL_USER); //palloc_get_page (PAL_USER);
-  if (kpage == NULL)
-    return false;
+	/* Load this page. */
+	file_seek (page->file, page->ofs);
+	if (file_read (page->file, kpage, page->read_bytes) != (int) page->read_bytes)
+	{
+		deallocate_uframe (kpage, true);
+		return false; 
+	}
 
-  /* Load this page. */
-  file_seek (page->file, page->ofs);
-  if (file_read (page->file, kpage, page->read_bytes) != (int) page->read_bytes)
-    {
-      deallocate_uframe (kpage);
-      return false; 
-    }
-    
-  memset (kpage + page->read_bytes, 0, page->zero_bytes);
+	memset (kpage + page->read_bytes, 0, page->zero_bytes);
 
-  /* Add the page to the process's address space. */
-  if (!install_page (page->addr, kpage, page->writable)) 
-    {
-      deallocate_uframe (kpage);
-      return false; 
-    }
+	/* Add the page to the process's address space. */
+	if (!install_page (page->addr, kpage, page->writable)) 
+	{
+		deallocate_uframe (kpage, true);
+		return false; 
+	}
 
-  /* Mark the page as loaded */
-  page->loaded = true;
+	/* Mark the page as loaded and set paddr */
+	page->loaded = true;
+	page->paddr = kpage;
 
-  return true;
+	return true;
 }
 
 
@@ -350,60 +347,39 @@ install_page (void *upage, void *kpage, bool writable)
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
 
-/*
- * Function:  evict_page
- * --------------------
- *	Does? Enhanced second-chance clock replacement
- *
- *  params...
- *
- */
-struct page*
-evict_page (void)
+bool
+is_writable (char ** buffer, unsigned size)
 {
-	//TODO: Don't forget to add synchronization (and make sure Rellermeyer's warning in the PDF is accounted for)!
-	struct page *page;
-	uint32_t *pd;
-	bool accessed;
-	bool dirty;
+	void *begin = pg_round_down (buffer);
+	void *end = pg_round_up (buffer + size);
 
-	bool found = false;
+	for(begin; begin < end; begin += PGSIZE)
+		if (!page_lookup (&thread_current()->spt->table, pg_round_down (buffer))->writable)
+			return false;
+	return true;
+}
 
-	struct page *page;
+void
+reclaim_pages (struct thread *thread)
+{
+	struct spt *spt = thread->spt;
 
-	while (!found)
-	{
-		page = hash_entry (hash_cur (&hand), struct page, hash_elem);
-		pd = page->pagedir;
-		accessed = pagedir_is_accessed (pd, page->addr);
-		dirty = pagedir_is_dirty (pd, page->addr);
+	lock_acquire (&spt->lock);
 
-		lock_acquire(&lock);
+		struct page *current;
+		struct hash_iterator hand;
+		hash_first (&hand, &spt->table);
 
-		//page->references - 1 != 0? Subtract one from references and don't clear page?
-
-		if (!(accessed || dirty))
+		while (hash_next (&hand))
 		{
-			pagedir_clear_page (pd, page);
-			found = true;
+			current = hash_entry (hash_cur (&hand), struct page, hash_elem);
+			if(current->loaded)
+				deallocate_uframe (current->paddr, false);
 		}
-		else if (!accessed && dirty)
-		{
-			PANIC ("Failed to evict page %p! No write back method available!\n", page);
-			pagedir_clear_page (pd, page);
-			//write back;			//TODO: Write write-back method
-			found = true;
-		}
-		else
-			pagedir_set_accessed (pd, page->addr, false);
 
-		lock_release(&lock);
+	lock_release (&spt->lock);
 
-		if (!hash_next (&hand))	//Advance pointer
-				hash_first (&hand, &spt);	//If reached end, start over
-	}
-
-	return page;
+	spt_destroy (spt);
 }
 
 /*
@@ -417,30 +393,35 @@ void
 print_page (struct page *page)
 {
 	//TODO: Figure out how to get PD
-	printf("Page:\t%p"
+	printf("Page:\t\t%p\nAddress:\t%p\nPage address:\t%p"
+		"\n-----------------------------------"
 		"\n\tPage directory:\t%p"
-		"\n\tLoaded:\t%s"
+		"\n\tLoaded:\t\t%s"
+		"\n\tResident:\t%s"
 		"\n\tSwap index:\t%d"
 		"\n\tAccessed:\t%s"
-		"\n\tDirty:\t%s"
+		"\n\tDirty:\t\t%s"
 		"\n\tReferences:\t%d"
-		"\n\tStack:\t%s"
+		"\n\tStack:\t\t%s"
 		"\n\tBytes to zero:\t%d"
 		"\n\tBytes to read:\t%d"
-		"\n\tNumber:\t%d"
-		"\n\tSize:\t%d"
+		"\n\tNumber:\t\t%d"
+		"\n\tSize:\t\t%d"
 		"\n\tProcess:\t%p"
 		"\n\tWritable:\t%s"
-		"\n\tFile:\t%p"
+		"\n\tFile:\t\t%p"
 		"\n\tFile offset:\t%d"
 		"\n\tHash element:\t%p"
-		"\n",
+		"\n\n",
+		page,
 		page->addr,
+		page->paddr,
 		page->pd,
 		page->loaded ? "True" : "False",
+		((uint32_t) page & PTE_P) ? "True" : "False",
+		page->swap_index,
 		pagedir_is_accessed (page->pd, page) ? "True" : "False",
 		pagedir_is_dirty (page->pd, page) ? "True" : "False",
-		page->swap_index,
 		page->references,
 		page->is_stack ? "True" : "False",
 		page->zero_bytes,
@@ -455,18 +436,21 @@ print_page (struct page *page)
 }
 
 void
-print_spt (void)
+print_spt (struct spt *spt)
 {
-  struct hash_iterator hand;
-  hash_first (&hand, &spt);
-  int x = 0;
+	struct hash_iterator hand;
+	hash_first (&hand, &spt->table);
 
-  while (hash_next (&hand))
-    print_page (hash_entry (hash_cur (&hand), struct page, hash_elem));
+	printf ("\n=============== SPT ===============\n");
+	while (hash_next (&hand))
+		//printf ("%p\n", hash_entry (hash_cur (&hand), struct page, hash_elem));
+		print_page (hash_entry (hash_cur (&hand), struct page, hash_elem));
+	printf ("===================================\n");
 }
 
 void
-set_page (struct page *p,
+set_page (struct page *page,
+			void *paddr,
 			bool loaded,
 			int16_t swap_index,
 			uint8_t references,
@@ -480,16 +464,17 @@ set_page (struct page *p,
 			struct file *file,
 			off_t ofs)
 {
-	p->loaded = loaded;
-	p->swap_index = swap_index;
-	p->references = references;
-	p->is_stack = is_stack;
-	p->zero_bytes = zero_bytes;
-	p->read_bytes = read_bytes;
-	p->number = number;
-	p->size = size;
-	p->proc_addr = proc_addr;
-	p->writable = writable;
-	p->file = file;
-	p->ofs = ofs;
+	page->paddr = paddr;
+	page->loaded = loaded;
+	page->swap_index = swap_index;
+	page->references = references;
+	page->is_stack = is_stack;
+	page->zero_bytes = zero_bytes;
+	page->read_bytes = read_bytes;
+	page->number = number;
+	page->size = size;
+	page->proc_addr = proc_addr;
+	page->writable = writable;
+	page->file = file;
+	page->ofs = ofs;
 }

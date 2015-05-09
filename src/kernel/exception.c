@@ -9,6 +9,8 @@
 #include "kernel/vaddr.h"
 #include "kernel/process.h"
 #include "kernel/pagedir.h"
+#include "kernel/syscall.h"
+#include "kernel/pte.h"
 #include "vm/page.h"
 #include "vm/frame.h"
 #include "vm/swap.h"
@@ -129,7 +131,7 @@ kill (struct intr_frame *f)
    description of "Interrupt 14--Page Fault Exception (#PF)" in
    [IA32-v3a] section 5.15 "Exception and Interrupt Reference". */
 static void
-page_fault (struct intr_frame *f) 
+page_fault (struct intr_frame *f)
 {
   bool not_present;  /* True: not-present page, false: writing r/o page. */
   bool write;        /* True: access was write, false: access was read. */
@@ -144,7 +146,6 @@ page_fault (struct intr_frame *f)
      [IA32-v3a] 5.15 "Interrupt 14--Page Fault Exception
      (#PF)". */
   asm ("movl %%cr2, %0" : "=r" (fault_addr));
-  printf("Page fault in kernel: %s\n", is_kernel_vaddr(fault_addr) ? "yes." : "no.");
 
   /* Turn interrupts back on (they were only off so that we could
      be assured of reading CR2 before it changed). */
@@ -160,69 +161,50 @@ page_fault (struct intr_frame *f)
 
   /* Handle bad dereferences from system call implementations. */
   if (!user)
-    {
-      f->eip = (void (*) (void)) f->eax;
-      f->eax = 0;
-      printf("OH NO!");
-      return;
-    }
-
-  // Our stuff from hereon:
-
-  int *total_bytes = (int *)(PHYS_BASE - sizeof(char) - sizeof(void *));  // USER MEMORY ACCESS - BLEH // TO-DO:
-
-  ASSERT(*total_bytes > MAX_STACK_SIZE); // WHAT DO?
-
-  void *f_paddr = (void *)((int) fault_addr - (int) fault_addr % (int) PGSIZE); //Faulting address' associate page address
-  struct page *f_page = page_lookup (f_paddr);
-
-  // Swap in
-  if (f_page != NULL && f_page->swap_index >= 0)
   {
-    // Should swap in ever consider if another page was loaded in its place? i.e., [a b c] : swap out a with d -> [d b c] -> swap back in a -> swap out d -> [a b c] -- does it cause a problem if d is overwritten? Dirty bit? (TODO: !!!)
-    swap_in (f_page); //Handled in allocate_uframe?
-  }
-  // Stack -- > or >= ? (TODO:) - Also, don't forget to look for TO-DO tags (with dash)
-  else if (fault_addr >= f->esp - STACK_MARGIN)  //f->esp - STACK_MARGIN < PHYS_BASE - *total_bytes) //Stack growth - STACK_MARGIN is relatively arbitrary heuristic
-  {
-    bool writable = true;
-
-    /* Add frame to FT and allocate */
-    void *kpage = allocate_uframe(PAL_USER | PAL_ZERO); //palloc_get_page (PAL_USER | PAL_ZERO);
-
-    if (kpage == NULL)
-    {
-      PANIC ("Null page allocated during page fault on address:\t%p\n", fault_addr);
-      //kpage = allocate_uframe(PAL_USER | PAL_ZERO);
-    }
-
-    /* Add page to SPT */
-    struct page *page = add_page (kpage);
-    set_page (page, true, -1, 1, true, 0, 0, 0, PGSIZE, NULL, writable, NULL, 0);
-    /* Page added. */
-
-    ASSERT( install_page (((uint8_t *) PHYS_BASE) - PGSIZE - *total_bytes, kpage, writable)); //Pls don't return null valu
-    *total_bytes += PGSIZE;
-  }
-  /*
-    How does OS handle a page fault?
-    • Interrupt causes system to be entered
-    • System saves state of running process, then vectors to page fault handler routine
-      – find or create (through eviction) a page frame into which to load the needed page (1)
-        • if I/O is required, run some other process while it’s going on
-      – find the needed page on disk and bring it into the page frame (2)
-        • run some other process while the I/O is going on
-      – fix up the page table entry
-        • mark it as “valid,” set “referenced” and “modified” bits to false, set protection bits appropriately, point to correct page frame
-      – put the process on the ready queue
-
-    Courtesy https://courses.cs.washington.edu/courses/cse451/12sp/lectures/13-hardware.support.pdf (slides 3-6)
-  */
-  // Lazy loading
-  else  
-  {
-    load_page (f_paddr);
+    f->eip = (void (*) (void)) f->eax;
+    f->eax = 0;
   }
 
-    //Swapping? In load_page?
+  if (!process_pf (f, fault_addr, write))
+    thread_exit ();
 }
+
+bool
+process_pf (struct intr_frame *frame, void *fault_addr, bool write)
+{
+  //Faulting address' associated page address
+  void *f_paddr = pg_round_down (fault_addr);
+  struct spt *spt = thread_current ()->spt;
+  struct page *f_page = page_lookup (&spt->table, f_paddr);
+
+  if (is_kernel_vaddr (fault_addr) ||                             // Kernel access
+      fault_addr == 0 ||                                          // Null dereference
+      (write && ((uint32_t) pg_round_down (fault_addr) & PTE_W))) // Write on read-only memory
+    return false;
+  else if (f_page != NULL && f_page->swap_index >= 0)
+    swap_in (f_page);                             // Swap in        // !!! !!! !!! TODO: Make reentrant (?) !!! !!! !!!
+  else if (is_stack (frame, fault_addr))
+    load_stack (frame, f_paddr);                  // Grow stack
+  else if (f_page)
+    load_page (spt, f_paddr);                     // Lazy loading   // !!! !!! !!! TODO: Make reentrant !!! !!! !!!
+  else
+    return false;
+
+  return true;
+}
+
+/*
+  How does OS handle a page fault?
+  • Interrupt causes system to be entered
+  • System saves state of running process, then vectors to page fault handler routine
+    – find or create (through eviction) a page frame into which to load the needed page (1)
+      • if I/O is required, run some other process while it’s going on
+    – find the needed page on disk and bring it into the page frame (2)
+      • run some other process while the I/O is going on
+    – fix up the page table entry
+      • mark it as “valid,” set “referenced” and “modified” bits to false, set protection bits appropriately, point to correct page frame
+    – put the process on the ready queue
+
+  Courtesy https://courses.cs.washington.edu/courses/cse451/12sp/lectures/13-hardware.support.pdf (slides 3-6)
+*/

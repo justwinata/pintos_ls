@@ -4,5 +4,6 @@ kernel/interrupt.o: ../../kernel/interrupt.c ../../kernel/interrupt.h \
   ../../lib/stddef.h ../../lib/kernel/stdio.h ../../kernel/flags.h \
   ../../kernel/intr-stubs.h ../../kernel/io.h ../../kernel/thread.h \
   ../../lib/kernel/list.h ../../kernel/synch.h ../../filesys/file.h \
-  ../../filesys/off_t.h ../../kernel/vaddr.h ../../kernel/loader.h \
-  ../../devices/timer.h ../../lib/round.h
+  ../../filesys/off_t.h ../../lib/kernel/hash.h ../../lib/kernel/list.h \
+  ../../kernel/vaddr.h ../../kernel/loader.h ../../devices/timer.h \
+  ../../lib/round.h

@@ -8,6 +8,8 @@
 #include "kernel/synch.h"
 #include "filesys/file.h"
 
+#include <hash.h>
+
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -134,6 +136,7 @@ struct thread
 #ifdef USERPROG
     /* Owned by kernel/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    struct spt *spt;                     /* Supplemental page table. */
 #endif
 
     /* Owned by thread.c. */

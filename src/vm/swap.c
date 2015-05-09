@@ -152,6 +152,11 @@ swap_out (struct page *page)
 void
 swap_in (struct page *page)
 {
+	/* Still need to consider when another page was loaded in current page's
+		place. i.e., [a b c] : swap out a with d -> [d b c] -> swap back in a
+		-> swap out d -> [a b c] -- is it a problem if d is overwritten? Dirty
+		bit? (YES to all - TODO: !!!) */
+
 	if ((int) bitmap_size (swap_table) < page->swap_index)
 		PANIC ("Failed to swap in page %p! Page not found in swap table!\n", page);
 

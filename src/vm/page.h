@@ -3,11 +3,19 @@
 
 #include <stddef.h>
 #include <hash.h>
+#include "kernel/synch.h"
 #include "filesys/off_t.h"
+
+struct spt
+{
+	struct hash table;			/* Supplemental page table. */
+    struct lock lock;			/* Lock for synchronization of SPT */
+};
 
 struct page
 {
 	void *addr;					/* Virtual address of page */
+	void *paddr;				/* Address of page from palloc_get_page */
 	void *pd;					/* Page directory associated with the page */
 	bool loaded;				/* Page is loaded from file or not */
 	int16_t swap_index;			/* Page is swapped at index if index not < 0 */
@@ -28,16 +36,21 @@ struct page
 									the SPT hash-table */
 };
 
-void spt_init (void);
-void remove_page (struct page *);
-struct page *add_page (void *);
-struct page *page_lookup (void *);
-bool load_page(void *);
+struct spt *spt_create (void);
+void spt_destroy (struct spt *);
+void remove_page (struct spt *, struct page *);
+struct page *add_page (struct spt *, void *);
+struct page *page_lookup (struct hash *, void *);
+bool load_page(struct spt *, void *);
 bool install_page (void *, void *, bool);
-struct page *evict_page (void);
+void reclaim_pages (struct thread *);
+bool is_writable_buffer (char **, unsigned);
+
 void print_page (struct page *);
-void print_spt (void);
+void print_spt (struct spt *spt);
+bool is_resident (void *);
 void set_page (struct page *p,
+				void *paddr,
 				bool loaded,
 				int16_t swap_index,
 				uint8_t references,

@@ -98,7 +98,6 @@ main (void)
   malloc_init ();
   paging_init ();
   ft_init();
-  spt_init();
   st_init();
 
   /* Segmentation. */
