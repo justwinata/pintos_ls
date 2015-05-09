@@ -69,11 +69,9 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <hash.h>
 #include "vm/page.h"
 #include "filesys/file.h"
 #include "kernel/malloc.h"
-#include "kernel/synch.h"
 #include "vm/page.h"
 #include "vm/frame.h"
 #include "kernel/vaddr.h"
@@ -106,8 +104,11 @@
 //////////////////
 
 static unsigned page_hash (const struct hash_elem *, void *);
+static unsigned page_hash_kva (const struct hash_elem *, void *);
 static bool page_less (const struct hash_elem *, const struct hash_elem *, void *);
+static bool page_less_kva (const struct hash_elem *, const struct hash_elem *, void *);
 static void page_destructor (struct hash_elem *, void *);
+static void page_destructor_kva (struct hash_elem *, void *);
 
 /////////////////
 //             //
@@ -126,7 +127,9 @@ spt_create (void)
 {
 	struct spt *spt = (struct spt *) malloc (sizeof (struct spt));
 	hash_init (&spt->table, page_hash, page_less, NULL);
+	hash_init (&spt->table_kva, page_hash_kva, page_less_kva, NULL);
 	lock_init (&spt->lock);
+	lock_init (&spt->lock_kva);
 	return spt;
 }
 
@@ -134,9 +137,11 @@ void
 spt_destroy (struct spt *spt) 
 {
 	lock_acquire (&spt->lock);
+	lock_acquire (&spt->lock_kva);
 		hash_destroy (&spt->table, page_destructor);
+		hash_destroy (&spt->table_kva, page_destructor_kva);
 		free (spt);
-	// lock_release not needed (lock is freed)
+	// lock_release not needed (locks are freed)
 }
 
 /*
@@ -180,10 +185,8 @@ remove_page (struct spt *spt, struct page *page)
 {
 	lock_acquire (&spt->lock);
 		free (hash_delete (&spt->table, &page->hash_elem));
+		free (hash_delete (&spt->table_kva, &page->hash_elem_kva));
 	lock_release (&spt->lock);
-
-	//TODO: Need
-	palloc_free_page(page->addr);
 }
 
 /*
@@ -203,7 +206,14 @@ static unsigned
 page_hash (const struct hash_elem *spt_elem, void *aux UNUSED)
 {
 	const struct page *page = hash_entry (spt_elem, struct page, hash_elem);
-	return hash_int ((int) page->addr); //bytes (&page->addr, sizeof page->addr);
+	return hash_int ((int) page->addr);
+}
+
+static unsigned
+page_hash_kva (const struct hash_elem *spt_elem_kva, void *aux UNUSED)
+{
+	const struct page *page = hash_entry (spt_elem_kva, struct page, hash_elem_kva);
+	return hash_int ((int) page->kv_addr);
 }
 
 /*
@@ -213,10 +223,10 @@ page_hash (const struct hash_elem *spt_elem, void *aux UNUSED)
  *		entry in the SPT's hash table is "less." "Less" for SPT entries is 
  *		defined as having a lower addr member within the page struct.
  *
- *  first: the first hash_elem to be compared
+ *  first: 	the first hash_elem to be compared
  *	second: the second hash_elem to be compared
- *	aux: an unused parameter that comes as part of the hash_table page_less 
- *		function signature
+ *	aux: 	an unused parameter that comes as part of the hash_table page_less 
+ *				function signature
  *
  *  returns: a boolean value of whether a is less than b or nott
  */
@@ -228,6 +238,14 @@ page_less (const struct hash_elem *first, const struct hash_elem *second, void *
 	return a->addr < b->addr;
 }
 
+static bool
+page_less_kva (const struct hash_elem *first, const struct hash_elem *second, void *aux UNUSED)
+{
+	const struct page *a = hash_entry (first, struct page, hash_elem_kva);
+	const struct page *b = hash_entry (second, struct page, hash_elem_kva);
+	return a->kv_addr < b->kv_addr;
+}
+
 /*
  * Function:  <name>
  * --------------------
@@ -237,6 +255,12 @@ void
 page_destructor (struct hash_elem *elem, void *aux UNUSED)
 {
 	free (hash_entry (elem, struct page, hash_elem));
+}
+
+void
+page_destructor_kva (struct hash_elem *elem, void *aux UNUSED)
+{
+	free (hash_entry (elem, struct page, hash_elem_kva));
 }
 
 /*
@@ -256,6 +280,16 @@ page_lookup (struct hash *table, void *addr)
 	page.addr = addr;
 	elem = hash_find (table, &page.hash_elem);
 	return elem != NULL ? hash_entry (elem, struct page, hash_elem) : NULL;
+}
+
+struct page*
+page_lookup_kva (struct hash *table, void *kv_addr)
+{
+	struct page page;
+	struct hash_elem *elem;
+	page.kv_addr = kv_addr;
+	elem = hash_find (table, &page.hash_elem_kva);
+	return elem != NULL ? hash_entry (elem, struct page, hash_elem_kva) : NULL;
 }
 
 /*
@@ -304,7 +338,7 @@ load_page (struct spt *spt, void *addr)
 	file_seek (page->file, page->ofs);
 	if (file_read (page->file, kpage, page->read_bytes) != (int) page->read_bytes)
 	{
-		deallocate_uframe (kpage, true);
+		deallocate_uframe (kpage);
 		return false; 
 	}
 
@@ -313,13 +347,13 @@ load_page (struct spt *spt, void *addr)
 	/* Add the page to the process's address space. */
 	if (!install_page (page->addr, kpage, page->writable)) 
 	{
-		deallocate_uframe (kpage, true);
+		deallocate_uframe (kpage);
 		return false; 
 	}
 
-	/* Mark the page as loaded and set paddr */
+	/* Mark the page as loaded and set kv_addr */
 	page->loaded = true;
-	page->paddr = kpage;
+	set_page_kva (spt, page, kpage);
 
 	return true;
 }
@@ -348,12 +382,12 @@ install_page (void *upage, void *kpage, bool writable)
 }
 
 bool
-is_writable (char ** buffer, unsigned size)
+is_writable_buffer (char ** buffer, unsigned size)
 {
 	void *begin = pg_round_down (buffer);
 	void *end = pg_round_up (buffer + size);
 
-	for(begin; begin < end; begin += PGSIZE)
+	for(; begin < end; begin += PGSIZE)
 		if (!page_lookup (&thread_current()->spt->table, pg_round_down (buffer))->writable)
 			return false;
 	return true;
@@ -374,7 +408,7 @@ reclaim_pages (struct thread *thread)
 		{
 			current = hash_entry (hash_cur (&hand), struct page, hash_elem);
 			if(current->loaded)
-				deallocate_uframe (current->paddr, false);
+				deallocate_uframe (current->kv_addr);
 		}
 
 	lock_release (&spt->lock);
@@ -393,7 +427,7 @@ void
 print_page (struct page *page)
 {
 	//TODO: Figure out how to get PD
-	printf("Page:\t\t%p\nAddress:\t%p\nPage address:\t%p"
+	printf("Page:\t\t%p\nAddress:\t%p\nKV address:\t%p"
 		"\n-----------------------------------"
 		"\n\tPage directory:\t%p"
 		"\n\tLoaded:\t\t%s"
@@ -415,13 +449,13 @@ print_page (struct page *page)
 		"\n\n",
 		page,
 		page->addr,
-		page->paddr,
+		page->kv_addr,
 		page->pd,
 		page->loaded ? "True" : "False",
 		((uint32_t) page & PTE_P) ? "True" : "False",
 		page->swap_index,
-		pagedir_is_accessed (page->pd, page) ? "True" : "False",
-		pagedir_is_dirty (page->pd, page) ? "True" : "False",
+		pagedir_is_accessed (page->pd, page->kv_addr) ? "True" : "False",
+		pagedir_is_dirty (page->pd, page->kv_addr) ? "True" : "False",
 		page->references,
 		page->is_stack ? "True" : "False",
 		page->zero_bytes,
@@ -441,7 +475,7 @@ print_spt (struct spt *spt)
 	struct hash_iterator hand;
 	hash_first (&hand, &spt->table);
 
-	printf ("\n=============== SPT ===============\n");
+	printf ("=============== SPT ===============\n");
 	while (hash_next (&hand))
 		//printf ("%p\n", hash_entry (hash_cur (&hand), struct page, hash_elem));
 		print_page (hash_entry (hash_cur (&hand), struct page, hash_elem));
@@ -450,7 +484,6 @@ print_spt (struct spt *spt)
 
 void
 set_page (struct page *page,
-			void *paddr,
 			bool loaded,
 			int16_t swap_index,
 			uint8_t references,
@@ -464,7 +497,6 @@ set_page (struct page *page,
 			struct file *file,
 			off_t ofs)
 {
-	page->paddr = paddr;
 	page->loaded = loaded;
 	page->swap_index = swap_index;
 	page->references = references;
@@ -477,4 +509,14 @@ set_page (struct page *page,
 	page->writable = writable;
 	page->file = file;
 	page->ofs = ofs;
+}
+
+void
+set_page_kva (struct spt *spt, struct page *page, void *kva)
+{
+	page->kv_addr = kva;
+
+	lock_acquire (&spt->lock_kva);
+		hash_insert (&spt->table_kva, &page->hash_elem_kva);
+	lock_release (&spt->lock_kva);
 }

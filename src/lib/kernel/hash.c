@@ -207,7 +207,31 @@ hash_first (struct hash_iterator *i, struct hash *h)
   i->elem = list_elem_to_hash_elem (list_head (i->bucket));
 }
 
-/* Advances I to the next element in the hash table and returns
+//TODO:
+/*
+ * Function:  <function_name> 
+ * --------------------
+ *  <function description>
+ *
+ *  <parameter one>: <parameter description>
+ *
+ *  returns: <return description> 
+ */
+void
+hash_variable (struct hash_iterator *i, struct hash_elem *e)
+{
+  ASSERT (i != NULL);
+  ASSERT (e != NULL);
+  ASSERT (i->hash != NULL);
+
+  i->bucket = find_bucket (i->hash, e);
+
+  ASSERT (i->bucket != NULL);
+
+  i->elem = e;
+}
+
+/* Advances i to the next element in the hash table and returns
    it.  Returns a null pointer if no elements are left.  Elements
    are returned in arbitrary order.
 

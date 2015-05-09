@@ -17,8 +17,10 @@
 #include "kernel/palloc.h"
 #include "kernel/thread.h"
 #include "kernel/vaddr.h"
+#include "kernel/synch.h"
 #include "vm/frame.h"
 #include "vm/page.h"
+#include "vm/swap.h"
 #include "kernel/pte.h"
 
 static thread_func start_process NO_RETURN;
@@ -191,6 +193,18 @@ process_exit (void)
   pd = cur->pagedir;
   if (pd != NULL) 
     {
+      /* Release process's held locks */
+      struct lock *ft = get_ft_lock ();
+      struct lock *spt = &cur->spt->lock;
+      struct lock *st = get_st_lock ();
+
+      if (lock_held_by_current_thread (ft))
+        lock_release (ft);
+      if (lock_held_by_current_thread (spt))
+        lock_release (spt);
+      if (lock_held_by_current_thread (st))
+        lock_release (st);
+
       /* Page reclamation */
       reclaim_pages (cur);
 
@@ -498,7 +512,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
     /* Add page to SPT and set initial values */
     struct page *page = add_page (spt, addr);
-    set_page (page, NULL, false, -1, 1, false, page_zero_bytes, page_read_bytes, 
+    set_page (page, false, -1, 1, false, page_zero_bytes, page_read_bytes, 
       count, PGSIZE, NULL, writable, file, PGSIZE * count);
     /* Page added and values set. */
 
@@ -537,8 +551,7 @@ setup_stack (void **esp, const char *file_args)
       if (success)
         {
           /* Add page to SPT */
-          struct page *page = add_page (thread_current ()->spt, addr);
-          set_page (page, kpage, true, -1, 0, true, 0, 0, 1, PGSIZE, NULL, writable, NULL, 0);
+
           /* Page added. */
 
           /* Extract the TOTAL_BYTES to push initially, and decrement
@@ -594,7 +607,7 @@ setup_stack (void **esp, const char *file_args)
       else
         {
           /* Remove frame from frame table */
-          deallocate_uframe (kpage, true);
+          deallocate_uframe (kpage);
           /* Removed. */
         }
     }
@@ -627,8 +640,10 @@ load_stack (struct intr_frame *frame, void *f_paddr)
 
   /* Add page to SPT */
   // !!! !!! !!! TODO: Make reentrant !!! !!! !!!
-  struct page *page = add_page (thread_current()->spt, f_paddr);
-  set_page (page, kpage, true, -1, 1, true, 0, 0, 0, PGSIZE, NULL, writable, NULL, 0);
+  struct spt *spt = thread_current()->spt;
+  struct page *page = add_page (spt, f_paddr);
+  set_page (page, true, -1, 1, true, 0, 0, 0, PGSIZE, NULL, writable, NULL, 0);
+  set_page_kva (spt, page, kpage);
   /* Page added. */
 
   ASSERT (install_page (f_paddr, kpage, writable));

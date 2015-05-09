@@ -304,7 +304,7 @@ read (struct intr_frame *f)
       !is_valid_ptr ((void *) buffer, f) ||
       !is_valid_ptr ((void *) *buffer, f) ||
       !is_valid_ptr ((void *) size, f) ||
-      !is_writable (buffer, size))
+      !is_writable_buffer (buffer, size))
     {
       lock_release (&thread_filesys_lock);
       thread_exit ();

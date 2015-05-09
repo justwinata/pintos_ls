@@ -175,6 +175,10 @@ process_pf (struct intr_frame *frame, void *fault_addr, bool write)
 {
   //Faulting address' associated page address
   void *f_paddr = pg_round_down (fault_addr);
+
+  if (!thread_current ())
+    return false;
+
   struct spt *spt = thread_current ()->spt;
   struct page *f_page = page_lookup (&spt->table, f_paddr);
 
@@ -183,7 +187,7 @@ process_pf (struct intr_frame *frame, void *fault_addr, bool write)
       (write && ((uint32_t) pg_round_down (fault_addr) & PTE_W))) // Write on read-only memory
     return false;
   else if (f_page != NULL && f_page->swap_index >= 0)
-    swap_in (f_page);                             // Swap in        // !!! !!! !!! TODO: Make reentrant (?) !!! !!! !!!
+    swap_in (f_paddr);                             // Swap in        // !!! !!! !!! TODO: Make reentrant (?) !!! !!! !!!
   else if (is_stack (frame, fault_addr))
     load_stack (frame, f_paddr);                  // Grow stack
   else if (f_page)

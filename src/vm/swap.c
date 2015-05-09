@@ -58,10 +58,11 @@
 #include "kernel/vaddr.h"
 
 #include "vm/swap.h"
-#include "vm/page.h"
 #include "vm/frame.h"
 #include "kernel/pte.h"
 #include "kernel/thread.h"
+#include "kernel/palloc.h"
+#include "kernel/pagedir.h"
 
 /////////////////////////
 //                     //
@@ -72,6 +73,7 @@
 static struct bitmap *swap_table;
 static struct block *swap_space;
 static struct lock lock;
+static const uint32_t PGS_PER_BLK = PGSIZE / BLOCK_SECTOR_SIZE;
 
 ///////////////
 //           //
@@ -103,11 +105,9 @@ static struct lock lock;
 void
 st_init (void)
 {
-	printf("Calling st_init...\n");
 	lock_init (&lock);
 	swap_space = block_get_role (BLOCK_SWAP);
 	swap_table = bitmap_create (0);
-	printf("st_init successful: %p\n", &swap_table); 
 }
 
 /*
@@ -116,32 +116,48 @@ st_init (void)
  *	Does?
  */
 void
-swap_out (struct page *page)
+swap_out (struct frame *frame, bool dirty)
 {
-	if (page == NULL)
-	{
-		PANIC ("Null page in swap_out in swap.c.\n");
-	}
+	ASSERT (frame);
 
-	if (!bitmap_any (swap_table, 0, bitmap_size (swap_table)))
-	{
-		if (bitmap_file_size (swap_table) == BLOCK_SECTOR_SIZE * bitmap_size (swap_table))
-			PANIC ("Out of swap space! Page %p does not fit!\n", page);
-		bitmap_expand (swap_table);
-	}
+	lock_acquire (&lock);
+		lock_acquire (&frame->thread->spt->lock_kva);
+			struct page *page = page_lookup_kva (&frame->thread->spt->table_kva, frame->addr);
+		lock_release (&frame->thread->spt->lock_kva);
+													// ^This is the sole reason table_kva exists
 
-	// Start at 0, looking for a size-1 group of 0-valued bits
-	int32_t index = bitmap_scan (swap_table, 0, 1, 0);
+		ASSERT (page != NULL);
 
-	if (index < 0)
-		PANIC ("Failed to swap out page\t%p! No space in swap table!\n", page);
+		if (dirty || page->is_stack)	// Stack must always be written (at least for now) because swapping in and swapping out destroys swap data
+		{
+			if (!bitmap_any (swap_table, 0, bitmap_size (swap_table)))
+			{
+				if(bitmap_file_size (swap_table) * PGSIZE < block_size (block_get_role (BLOCK_SWAP)))
+					bitmap_expand (swap_table);
+				else
+					PANIC ("Swap disk out of space.\n");
+			}
 
-	uint32_t counter;
-	for (counter = 0; counter < PGSIZE / BLOCK_SECTOR_SIZE; counter++)
-		block_write (swap_space, index + counter, page->addr + counter * sizeof (void *));
+			int32_t index = bitmap_scan (swap_table, 0, 1, 0);
+			printf ("Found index: %d\n", index);
 
-	bitmap_mark (swap_table, index);
-	page->swap_index = index;
+			printf ("Writing %p\n", frame->addr);
+
+			uint32_t counter;
+			for (counter = 0; counter < PGS_PER_BLK; counter++)
+				block_write (swap_space,
+							(index * PGS_PER_BLK) + counter,
+							&frame->addr + (counter * BLOCK_SECTOR_SIZE));
+
+			printf (">>> Reached near-end of swap out <<<\n");
+
+			bitmap_mark (swap_table, index);
+			page->swap_index = index;
+		}
+
+		deallocate_uframe (frame);
+
+	lock_release (&lock);
 }
 
 /*
@@ -150,20 +166,40 @@ swap_out (struct page *page)
  *	Does?
  */
 void
-swap_in (struct page *page)
+swap_in (void *addr)
 {
-	/* Still need to consider when another page was loaded in current page's
-		place. i.e., [a b c] : swap out a with d -> [d b c] -> swap back in a
-		-> swap out d -> [a b c] -- is it a problem if d is overwritten? Dirty
-		bit? (YES to all - TODO: !!!) */
+	ASSERT (addr);
 
-	if ((int) bitmap_size (swap_table) < page->swap_index)
-		PANIC ("Failed to swap in page %p! Page not found in swap table!\n", page);
+	void *kpage = allocate_uframe (PAL_USER);
 
-	uint32_t counter;
-	for (counter = 0; counter < PGSIZE / BLOCK_SECTOR_SIZE; counter++)
-		block_read (swap_space, page->swap_index + counter, page->addr + counter * sizeof (void *));
+	ASSERT (kpage);
 
-	bitmap_reset (swap_table, page->swap_index);
-	page->swap_index = -1;
+	lock_acquire (&lock);
+
+		struct frame *frame = frame_lookup (addr);
+
+		lock_acquire (&frame->thread->spt->lock_kva);
+			struct page *page = page_lookup_kva (&frame->thread->spt->table_kva, frame->addr);
+		lock_release (&frame->thread->spt->lock_kva);
+
+		ASSERT (page != NULL);
+
+		install_page (addr, kpage, page->writable);
+		int32_t index = page->swap_index;
+
+		uint32_t counter;
+		for (counter = 0; counter < PGS_PER_BLK; counter++)
+				block_write (swap_space,
+							(index * PGS_PER_BLK) + counter,
+							&frame->addr + (counter * BLOCK_SECTOR_SIZE));
+
+		bitmap_reset (swap_table, page->swap_index);
+		page->swap_index = -1;
+	lock_release (&lock);
+}
+
+struct lock *
+get_st_lock(void)
+{
+	return &lock;
 }

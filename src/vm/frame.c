@@ -43,9 +43,9 @@
 ////////////////
 
 #include <stdio.h>
-#include <hash.h>
 #include "kernel/synch.h"
 #include "kernel/malloc.h"
+#include "kernel/thread.h"
 #include "vm/frame.h"
 #include "vm/swap.h"
 #include "kernel/pagedir.h"
@@ -58,8 +58,10 @@
 //                     //
 /////////////////////////
 
-static struct hash frame_table;	/* Frame Table */
-static struct lock lock;		/* Lock for synchronization of frame table */
+static struct hash frame_table;		/* Frame Table */
+static struct lock lock;			/* Lock for synchronization of frame table */
+static struct hash_iterator hand;	/* Iterator for use as clock hand in ESCRA */
+static struct frame *hand_frame;	/* Hand's current frame for the sake of hash_variable */
 
 ///////////////
 //           //
@@ -77,7 +79,6 @@ static struct lock lock;		/* Lock for synchronization of frame table */
 
 unsigned frame_hash (const struct hash_elem *, void *);
 bool frame_less (const struct hash_elem *, const struct hash_elem *, void *);
-struct frame* frame_lookup (void *);
 
 /////////////////
 //             //
@@ -98,6 +99,18 @@ void
 ft_init()
 {
 	hash_init (&frame_table, frame_hash, frame_less, NULL);
+	hash_first (&hand, &frame_table);
+
+	// Create and insert dummy frame for sake of hand_frame
+	struct frame *frame = (struct frame *) malloc (sizeof (struct frame));
+	frame->addr = 0x0;
+	frame->pinned = true;
+	frame->thread = thread_current ();
+	hash_insert(&frame_table, &frame->hash_elem);
+
+	hand_frame = hash_entry (hash_next(&hand), struct frame, hash_elem);
+
+	hash_next (&hand);
 	lock_init (&lock);
 }
 
@@ -170,10 +183,19 @@ allocate_uframe(enum palloc_flags flags)
 		void *addr = palloc_get_page (flags);
 
 		if(addr == NULL)
-			swap_out (evict_page ());
+		{
+			evict_page ();
+			printf ("\t>> Page evicted <<\n");
+			addr = palloc_get_page (flags);
+		}
 
 		struct frame *frame = (struct frame *) malloc (sizeof (struct frame));
 		frame->addr = addr;
+		frame->pinned = false;
+		frame->thread = thread_current ();
+
+		if (!frame->thread)
+			printf ("\n\tNull thread in frame %p\n\n", frame);
 		
 		hash_insert(&frame_table, &frame->hash_elem);
 	
@@ -192,7 +214,7 @@ allocate_uframe(enum palloc_flags flags)
  *  returns: <return description> 
  */
 void
-deallocate_uframe(void *addr, bool palloc_free)
+deallocate_uframe (void *addr)
 {
 	//TODO: Consider if free_frame option needed
 	lock_acquire (&lock);
@@ -202,11 +224,7 @@ deallocate_uframe(void *addr, bool palloc_free)
 		if (!frame)
 			return;
 
-		ASSERT (frame);
-
-		if (palloc_free)
-			palloc_free_page (frame->addr);
-
+		palloc_free_page (frame->addr);
 		hash_delete(&frame_table, &frame->hash_elem);
 		free (frame);
 
@@ -221,16 +239,16 @@ deallocate_uframe(void *addr, bool palloc_free)
  *  params...
  *
  */
-struct frame*
+void
 evict_page (void)
 {
-	static struct hash_iterator hand;	/* Iterator for use as clock hand in ESCRA */
-	hash_first (&hand, &frame_table);
-	hash_next (&hand);
+	/* Regain meaning for iterator in between hash-table modifications */
+	hash_variable (&hand, &hand_frame->hash_elem);
 
-	//TODO: Hand is invalidated upon any modification of the SPT!!! D: Fix!
-	//TODO: Don't forget to add synchronization (and make sure Rellermeyer's warning in the PDF is accounted for)!
-	struct frame *frame;
+	//print_ft ();
+
+	/* TODO: Don't forget to add synchronization (and make sure Rellermeyer's
+		warning in the PDF is accounted for)! */
 	uint32_t *pd;
 	bool accessed;
 	bool dirty;
@@ -239,31 +257,52 @@ evict_page (void)
 
 	while (!found)
 	{
-		// frame = hash_entry (hash_cur (&hand), struct frame, hash_elem);
-		// pd = frame->pagedir;
-		// accessed = pagedir_is_accessed (pd, frame->addr);
-		// dirty = pagedir_is_dirty (pd, frame->addr);
+		if (!hand_frame->pinned)
+		{
+			if (!hash_find (&frame_table, &hand_frame->hash_elem))
+				goto advance_ptr;
 
-		// //frame->references - 1 != 0? Subtract one from references and don't clear frame?
+			pd = hand_frame->thread->pagedir;
+			accessed = pagedir_is_accessed (pd, hand_frame->addr);
+			dirty = pagedir_is_dirty (pd, hand_frame->addr);
 
-		// if (!(accessed || dirty))
-		// {
-		// 	pagedir_clear_page (pd, frame);
-		// 	found = true;
-		// }
-		// else if (!accessed && dirty)
-		// {
-		// 	PANIC ("Failed to evict frame %p! No write back method available!\n", frame);
-		// 	pagedir_clear_page (pd, frame);
-		// 	//write back;			//TODO: Write write-back method
-		// 	found = true;
-		// }
-		// else
-		// 	pagedir_set_accessed (pd, frame->addr, false);
+			if (!accessed)
+			{
+				swap_out (hand_frame, dirty);
+				found = true;
+				printf ("Swap out compeleted.\n");
+			}
+			else
+				pagedir_set_accessed (pd, hand_frame->addr, false);
+		}
 
-		// if (!hash_next (&hand))	//Advance pointer
-		// 		hash_first (&hand, &spt);	//If reached end, start over
+advance_ptr:
+		if (!hash_next (&hand))
+				hash_first (&hand, &frame_table);	//If reached end, start over
+
+		hand_frame = hash_entry (hash_cur(&hand), struct frame, hash_elem);
 	}
+}
 
-	return frame;
+void
+print_ft (void)
+{
+	struct hash_iterator hand;
+	hash_first (&hand, &frame_table);
+	struct frame *frame;
+
+	printf ("\n=============== FT ===============\n");
+	while (hash_next (&hand))
+	{
+		frame = hash_entry (hash_cur (&hand), struct frame, hash_elem);
+		printf ("Frame %p", frame);
+		printf (" with thread %p\n", frame->thread);
+	}
+	printf ("==================================\n");
+}
+
+struct lock *
+get_ft_lock(void)
+{
+	return &lock;
 }

@@ -5,6 +5,5 @@ devices/shutdown.o: ../../devices/shutdown.c ../../devices/shutdown.h \
   ../../devices/serial.h ../../devices/timer.h ../../lib/round.h \
   ../../kernel/io.h ../../kernel/thread.h ../../lib/kernel/list.h \
   ../../kernel/synch.h ../../filesys/file.h ../../filesys/off_t.h \
-  ../../lib/kernel/hash.h ../../lib/kernel/list.h \
   ../../kernel/exception.h ../../kernel/interrupt.h ../../devices/block.h \
   ../../lib/inttypes.h ../../filesys/filesys.h
