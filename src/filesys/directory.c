@@ -92,7 +92,6 @@ static bool
 lookup (const struct dir *dir, const char *name,
         struct dir_entry *ep, off_t *ofsp) 
 {
-  DEBUG("directory.c:lookup()...\n");
   struct dir_entry e;
   size_t ofs;
   
@@ -107,10 +106,8 @@ lookup (const struct dir *dir, const char *name,
           *ep = e;
         if (ofsp != NULL)
           *ofsp = ofs;
-        DEBUG("directory.c:...lookup()\n");
         return true;
       }
-  DEBUG("directory.c:...lookup()\n");
   return false;
 }
 
@@ -154,12 +151,10 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   /* Check NAME for validity. */
   if (*name == '\0' || strlen (name) > NAME_MAX)
     return false;
-  DEBUG("dir_add(): name valid\n");
 
   /* Check that NAME is not in use. */
   if (lookup (dir, name, NULL, NULL))
     goto done;
-  DEBUG("dir_add(): name not in use\n");
 
   /* Set OFS to offset of free slot.
      If there are no free slots, then it will be set to the
@@ -172,14 +167,12 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
        ofs += sizeof e) 
     if (!e.in_use)
       break;
-  DEBUG("dir_add(): set OFS to offset of free slot\n");
 
   /* Write slot. */
   e.in_use = true;
   strlcpy (e.name, name, sizeof e.name);
   e.inode_sector = inode_sector;
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
-  DEBUG("dir_add(): wrote slot\n");
 
  done:
   return success;

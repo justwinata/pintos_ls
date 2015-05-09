@@ -17,13 +17,6 @@ static void do_format (void);
 void
 filesys_init (bool format) 
 {
-#if NDEBUG
-  DEBUG("\n\n===============================\n");
-  DEBUG("===============================\n");
-  DEBUG("===============================\n");
-  DEBUG("Calling filesys_init()...\n");
-#endif
-
   fs_device = block_get_role (BLOCK_FILESYS);
   if (fs_device == NULL)
     PANIC ("No file system device found, can't initialize file system.");
@@ -35,13 +28,6 @@ filesys_init (bool format)
     do_format ();
 
   free_map_open ();
-
-#if NDEBUG
-  DEBUG("...filesys_init() successful\n");
-  DEBUG("===============================\n");
-  DEBUG("===============================\n");
-  DEBUG("===============================\n\n\n");
-#endif
 }
 
 /* Shuts down the file system module, writing any unwritten data
@@ -59,25 +45,16 @@ filesys_done (void)
 bool
 filesys_create (const char *name, off_t initial_size) 
 {
-  DEBUG("\n\n===============================\n");
-  DEBUG("Calling filesys_create(%s, %d)...\n", name, initial_size);
-
   block_sector_t inode_sector = 0;
   struct dir *dir = dir_open_root ();
-  bool success = dir != NULL;
-  DEBUG("filesys_create(): dir != NULL %s\n", (success) ? "success!" : "FAILED");
-  success = success && free_map_allocate (1, &inode_sector);
-  DEBUG("filesys_create(): free_map_allocate() %s\n", (success) ? "success!" : "FAILED");
-  success = success && inode_create (inode_sector, initial_size);
-  DEBUG("filesys_create(): inode_create %s\n", (success) ? "success!" : "FAILED");
-  success = success && dir_add (dir, name, inode_sector);
-  DEBUG("filesys_create(): dir_add %s\n", (success) ? "success!" : "FAILED");
+  bool success = (dir != NULL
+                  && free_map_allocate (1, &inode_sector)
+                  && inode_create (inode_sector, initial_size)
+                  && dir_add (dir, name, inode_sector));
   if (!success && inode_sector != 0) 
     free_map_release (inode_sector, 1);
   dir_close (dir);
 
-  DEBUG("...filesys_create() successful\n");
-  DEBUG("===============================\n\n\n");
   return success;
 }
 
