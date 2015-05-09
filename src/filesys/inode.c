@@ -423,9 +423,9 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   if (offset + size > inode->data.length)
   {
       DEBUG("inode_write_at(): inode size too small. Grow inode\n");
-      // lock_acquire(&inode->write_lock);
+      lock_acquire(&inode->write_lock);
       inode_grow (&inode->data, offset + size);
-      // lock_release(&inode->write_lock);
+      lock_release(&inode->write_lock);
   }
 
   while (size > 0) 
@@ -447,9 +447,9 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
         {
           /* Write full sector directly to disk. */
-          // lock_acquire(&inode->write_lock);
+          lock_acquire(&inode->write_lock);
           block_write (fs_device, sector_idx, buffer + bytes_written);
-          // lock_release(&inode->write_lock);
+          lock_release(&inode->write_lock);
         }
       else 
         {
@@ -469,9 +469,9 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
           else
             memset (bounce, 0, BLOCK_SECTOR_SIZE);
           memcpy (bounce + sector_ofs, buffer + bytes_written, chunk_size);
-          // lock_acquire(&inode->write_lock);
+          lock_acquire(&inode->write_lock);
           block_write (fs_device, sector_idx, bounce);
-          // lock_release(&inode->write_lock);
+          lock_release(&inode->write_lock);
         }
 
       /* Advance. */
