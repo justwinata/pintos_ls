@@ -11,22 +11,48 @@
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
 
-#define DIR_BLOCK_SIZE 123    /* Number of direct blocks. */
+// #define DIR_BLOCK_SIZE 123    /* Number of direct blocks. */
+#define DIR_BLOCK_SIZE 124    /* Number of direct blocks. */
 #define INDIR_BLOCK_SIZE 128  /* Each disk block can hold 512 / 4 = 128 addresses 
                                  to other blocks.
                                  http://web.stanford.edu/class/cs140/cgi-bin/section/10sp-proj4.pdf */
 
 /* On-disk inode.
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
+// struct inode_disk
+//   {
+//     block_sector_t start;               /* First data sector. */
+//     off_t length;                       /* File size in bytes. */
+//     unsigned magic;                     /* Magic number. */
+
+//     uint32_t direct[DIR_BLOCK_SIZE];    /* Direct blocks. */
+//     block_sector_t *indirect;           /* Indirect blocks. */
+//     block_sector_t **doubly_indirect;   /* Doubly indirect blocks. */
+//   };
+
+struct direct
+  {
+    block_sector_t *block;
+  };
+
+struct indirect
+  {
+    struct direct direct[INDIR_BLOCK_SIZE];
+  };
+
+struct doubly_indirect
+  {
+    struct indirect indirect[INDIR_BLOCK_SIZE];
+  };
+
 struct inode_disk
   {
-    block_sector_t start;               /* First data sector. */
-    off_t length;                       /* File size in bytes. */
-    unsigned magic;                     /* Magic number. */
+    off_t length;                     /* File size in bytes. */
+    unsigned magic;                   /* Magic number. */
 
-    uint32_t direct[DIR_BLOCK_SIZE];    /* Direct blocks. */
-    block_sector_t *indirect;           /* Indirect blocks. */
-    block_sector_t **doubly_indirect;   /* Doubly indirect blocks. */
+    struct direct direct[DIR_BLOCK_SIZE];    /* Direct blocks. */
+    struct indirect *indirect;                /* Indirect blocks. */
+    struct doubly_indirect *doubly_indirect;  /* Doubly indirect blocks. */
   };
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -63,13 +89,15 @@ byte_to_sector (const struct inode *inode, off_t pos)
   {
       size_t sectors = pos / BLOCK_SECTOR_SIZE;
       size_t num_dir = (sectors < DIR_BLOCK_SIZE) ? sectors : DIR_BLOCK_SIZE;
+      block_sector_t output;
 
       DEBUG("Move onto direct blocks\n");
       if (sectors <= DIR_BLOCK_SIZE)
       {
-        DEBUG("byte at %d (%d) = %d\n", pos, num_dir, inode->data.start + num_dir);
-        DEBUG("...byte_to_sector() successful.\n");
-        return inode->data.start + num_dir;
+          output = *(inode->data.direct[num_dir].block);
+          DEBUG("byte at %d (%d) = %d\n", pos, num_dir, output);
+          DEBUG("...byte_to_sector() successful.\n");
+          return output;
       }
 
       DEBUG("Move onto indirect blocks\n");
@@ -77,18 +105,20 @@ byte_to_sector (const struct inode *inode, off_t pos)
       DEBUG("num_indir = %d\n", num_indir);
       if (sectors <= INDIR_BLOCK_SIZE + DIR_BLOCK_SIZE)
       {
-        DEBUG("byte at %d (%d, %d) = %d\n", pos, num_dir, num_indir, *inode->data.indirect + num_indir);
-        DEBUG("...byte_to_sector() successful.\n");
-        return *inode->data.indirect + num_indir;
+          output = *(inode->data.indirect->direct[num_indir].block);
+          DEBUG("byte at %d (%d, %d) = %d\n", pos, num_dir, num_indir, output);
+          DEBUG("...byte_to_sector() successful.\n");
+          return output;
       }
 
       DEBUG("Move onto doubly indirect blocks\n");
       size_t num_double = num_indir - INDIR_BLOCK_SIZE;
       size_t dbl_indir_index = num_double / INDIR_BLOCK_SIZE;
       size_t dbl_indir_pos = num_double % INDIR_BLOCK_SIZE;
-      DEBUG("byte at %d (%d, %d) = %d\n", pos, dbl_indir_index, dbl_indir_pos, *(*inode->data.doubly_indirect + dbl_indir_index) + dbl_indir_pos);
+      output = *(inode->data.doubly_indirect->indirect[dbl_indir_index].direct[dbl_indir_pos].block);
+      DEBUG("byte at %d (%d, %d) = %d\n", pos, dbl_indir_index, dbl_indir_pos, output);
       DEBUG("...byte_to_sector() successful.\n");
-      return *(*inode->data.doubly_indirect + dbl_indir_index) + dbl_indir_pos;
+      return output;
   }
   else
   {
@@ -102,6 +132,9 @@ byte_to_sector (const struct inode *inode, off_t pos)
 /* List of open inodes, so that opening a single inode twice
    returns the same `struct inode'. */
 static struct list open_inodes;
+
+/* Method declaration */
+bool inode_disk_grow (struct inode_disk *inode, off_t new_size);
 
 /* Initializes the inode module. */
 void
@@ -127,6 +160,7 @@ inode_create (block_sector_t sector, off_t length)
 
   /* If this assertion fails, the inode structure is not exactly
      one sector in size, and you should fix that. */
+  DEBUG("size of disk_inode = %d\n", sizeof *disk_inode);
   ASSERT (sizeof *disk_inode == BLOCK_SECTOR_SIZE);
 
   DEBUG("length = %d\n", length);
@@ -136,122 +170,130 @@ inode_create (block_sector_t sector, off_t length)
   {
       size_t sectors = bytes_to_sectors (length);
       DEBUG("num sectors = %d\n", sectors);
-      disk_inode->length = length;
+      disk_inode->length = 0;
       disk_inode->magic = INODE_MAGIC;
 
-      size_t num_dir = (sectors < DIR_BLOCK_SIZE) ? sectors : DIR_BLOCK_SIZE;
-      size_t num_indir = (num_dir < DIR_BLOCK_SIZE) ? 0 : sectors - DIR_BLOCK_SIZE;
-      if (num_indir >= INDIR_BLOCK_SIZE)
-          num_indir -= INDIR_BLOCK_SIZE;
-      size_t num_double = (num_indir < INDIR_BLOCK_SIZE) ? 0 : num_indir - INDIR_BLOCK_SIZE;
+      // size_t num_dir = (sectors < DIR_BLOCK_SIZE) ? sectors : DIR_BLOCK_SIZE;
+      // size_t num_indir = (num_dir < DIR_BLOCK_SIZE) ? 0 : sectors - DIR_BLOCK_SIZE;
+      // if (num_indir >= INDIR_BLOCK_SIZE)
+      //     num_indir -= INDIR_BLOCK_SIZE;
+      // size_t num_double = (num_indir < INDIR_BLOCK_SIZE) ? 0 : num_indir - INDIR_BLOCK_SIZE;
 
-      DEBUG("num_dir = %d, num_indir = %d, num_double = %d\n", num_dir, num_indir, num_double);
+      // DEBUG("num_dir = %d, num_indir = %d, num_double = %d\n", num_dir, num_indir, num_double);
 
-      static char zeros[BLOCK_SECTOR_SIZE];
-      size_t i;
+      // static char zeros[BLOCK_SECTOR_SIZE];
+      // size_t i;
 
-      // Allocate direct blocks
-      DEBUG("Allocating direct blocks\n");
 
-      if (free_map_allocate(1, &disk_inode->start))
-      {
-          block_write (fs_device, sector, disk_inode);
-          block_write (fs_device, disk_inode->start, zeros);
-          for (i = 1; i < num_dir; i++)
-          {
-              if (free_map_allocate(1, &disk_inode->start + i))
-              {
-                  block_write (fs_device, disk_inode->start + i, zeros);
-                  block_write (fs_device, sector, disk_inode);
-              }
-          }
-          DEBUG("Direct blocks allocated successfully!\n");
-          success = true;
-      }
-      // if (free_map_allocate(num_dir, &disk_inode->start))
+      block_write (fs_device, sector, disk_inode);
+      inode_disk_grow(disk_inode, length);
+      block_write (fs_device, sector, disk_inode);
+      
+
+
+      
+
+      // // Allocate direct blocks
+      // DEBUG("Allocating direct blocks\n");
+      // if (free_map_allocate(1, &disk_inode->start))
       // {
       //     block_write (fs_device, sector, disk_inode);
-      //     for (i = 0; i < num_dir; i++)
-      //         block_write (fs_device, disk_inode->start + i, zeros);
+      //     block_write (fs_device, disk_inode->start, zeros);
+      //     for (i = 1; i < num_dir; i++)
+      //     {
+      //         if (free_map_allocate(1, &disk_inode->start + i))
+      //         {
+      //             block_write (fs_device, disk_inode->start + i, zeros);
+      //             block_write (fs_device, sector, disk_inode);
+      //         }
+      //     }
       //     DEBUG("Direct blocks allocated successfully!\n");
       //     success = true;
       // }
-      else
-      {
-          DEBUG("Direct blocks not allocated successfully :(\n");
-          success = false;
-      }
+      // // if (free_map_allocate(num_dir, &disk_inode->start))
+      // // {
+      // //     block_write (fs_device, sector, disk_inode);
+      // //     for (i = 0; i < num_dir; i++)
+      // //         block_write (fs_device, disk_inode->start + i, zeros);
+      // //     DEBUG("Direct blocks allocated successfully!\n");
+      // //     success = true;
+      // // }
+      // else
+      // {
+      //     DEBUG("Direct blocks not allocated successfully :(\n");
+      //     success = false;
+      // }
 
-      // Allocate indirect blocks
-      if (num_indir > 0)
-      {
-          DEBUG("Allocating indirect blocks\n");
-          // disk_inode->indirect = calloc (1, BLOCK_SECTOR_SIZE);
-          free_map_allocate(1, disk_inode->indirect);
-          DEBUG("disk_inode->indirect = %p", disk_inode->indirect);
-          if (disk_inode->indirect != NULL)
-          {
-              for (i = 0; i < num_indir; i++)
-              {
-                  block_sector_t indir_block = *disk_inode->indirect + i;
-                  DEBUG("indir_block = %d\n", indir_block);
-                  if (free_map_allocate(1, &indir_block))
-                  {
-                      block_write (fs_device, indir_block, zeros);
-                      block_write (fs_device, sector, disk_inode);
-                  }
-                  else
-                      success = false;
-              }
-          }
-          else
-              success = false;
-          DEBUG("Indirect blocks %sallocated successfully%s\n", success ? "" : "not ", success ? "!" : " :(");
-      }
+      // // Allocate indirect blocks
+      // if (num_indir > 0)
+      // {
+      //     DEBUG("Allocating indirect blocks\n");
+      //     // disk_inode->indirect = calloc (1, BLOCK_SECTOR_SIZE);
+      //     free_map_allocate(1, disk_inode->indirect);
+      //     DEBUG("disk_inode->indirect = %p", disk_inode->indirect);
+      //     if (disk_inode->indirect != NULL)
+      //     {
+      //         for (i = 0; i < num_indir; i++)
+      //         {
+      //             block_sector_t indir_block = *disk_inode->indirect + i;
+      //             DEBUG("indir_block = %d\n", indir_block);
+      //             if (free_map_allocate(1, &indir_block))
+      //             {
+      //                 block_write (fs_device, indir_block, zeros);
+      //                 block_write (fs_device, sector, disk_inode);
+      //             }
+      //             else
+      //                 success = false;
+      //         }
+      //     }
+      //     else
+      //         success = false;
+      //     DEBUG("Indirect blocks %sallocated successfully%s\n", success ? "" : "not ", success ? "!" : " :(");
+      // }
 
-      // Allocate doubly indirect blocks
-      if (num_double > 0)
-      {
-          DEBUG("Allocating doubly indirect blocks\n");
-          disk_inode->doubly_indirect = calloc (1, BLOCK_SECTOR_SIZE);
-          if (disk_inode->indirect != NULL)
-          {
-              size_t num_indir_blocks = DIV_ROUND_UP(num_double, INDIR_BLOCK_SIZE);
-              for (i = 0; i < num_indir_blocks; i++)
-              {
-                  block_sector_t *indir_block = *disk_inode->doubly_indirect + i;
-                  DEBUG("indir_block = %p\n", indir_block);
-                  indir_block = calloc (1, BLOCK_SECTOR_SIZE);
-                  if (indir_block != NULL)
-                  {
-                      size_t j;
-                      for (j = 0; j < INDIR_BLOCK_SIZE && j < num_double; j++)
-                      {
-                          block_sector_t dbl_indir_block = *indir_block + j;
-                          DEBUG("dbl_indir_block = %d\n", dbl_indir_block);
-                          if (free_map_allocate(INDIR_BLOCK_SIZE, &dbl_indir_block))
-                          {
-                              block_write (fs_device, dbl_indir_block, zeros);
-                              block_write (fs_device, sector, disk_inode);
-                          }
-                          else
-                              success = false;
-                      }
-                      num_double -= INDIR_BLOCK_SIZE;
-                      if (j < INDIR_BLOCK_SIZE)
-                        break;
-                  }
-                  else
-                  {
-                      success = false;
-                      break;
-                  }
-              }
-          }
-          else
-              success = false;
-          DEBUG("Doubly indirect blocks %sallocated successfully%s\n", success ? "" : "not ", success ? "!" : " :(");
-      }
+      // // Allocate doubly indirect blocks
+      // if (num_double > 0)
+      // {
+      //     DEBUG("Allocating doubly indirect blocks\n");
+      //     disk_inode->doubly_indirect = calloc (1, BLOCK_SECTOR_SIZE);
+      //     if (disk_inode->indirect != NULL)
+      //     {
+      //         size_t num_indir_blocks = DIV_ROUND_UP(num_double, INDIR_BLOCK_SIZE);
+      //         for (i = 0; i < num_indir_blocks; i++)
+      //         {
+      //             block_sector_t *indir_block = *disk_inode->doubly_indirect + i;
+      //             DEBUG("indir_block = %p\n", indir_block);
+      //             indir_block = calloc (1, BLOCK_SECTOR_SIZE);
+      //             if (indir_block != NULL)
+      //             {
+      //                 size_t j;
+      //                 for (j = 0; j < INDIR_BLOCK_SIZE && j < num_double; j++)
+      //                 {
+      //                     block_sector_t dbl_indir_block = *indir_block + j;
+      //                     DEBUG("dbl_indir_block = %d\n", dbl_indir_block);
+      //                     if (free_map_allocate(INDIR_BLOCK_SIZE, &dbl_indir_block))
+      //                     {
+      //                         block_write (fs_device, dbl_indir_block, zeros);
+      //                         block_write (fs_device, sector, disk_inode);
+      //                     }
+      //                     else
+      //                         success = false;
+      //                 }
+      //                 num_double -= INDIR_BLOCK_SIZE;
+      //                 if (j < INDIR_BLOCK_SIZE)
+      //                   break;
+      //             }
+      //             else
+      //             {
+      //                 success = false;
+      //                 break;
+      //             }
+      //         }
+      //     }
+      //     else
+      //         success = false;
+      //     DEBUG("Doubly indirect blocks %sallocated successfully%s\n", success ? "" : "not ", success ? "!" : " :(");
+      // }
 
       block_write (fs_device, sector, disk_inode);
       free (disk_inode);
@@ -334,8 +376,9 @@ inode_close (struct inode *inode)
       if (inode->removed) 
         {
           free_map_release (inode->sector, 1);
-          free_map_release (inode->data.start,
-                            bytes_to_sectors (inode->data.length)); 
+          // TODO: free
+          // free_map_release (inode->data.start,
+          //                   bytes_to_sectors (inode->data.length)); 
         }
 
       free (inode); 
@@ -534,10 +577,17 @@ inode_length (const struct inode *inode)
   return inode->data.length;
 }
 
+/* Calls real inode_grow(). */
+bool
+inode_grow (struct inode *inode, off_t new_size)
+{
+    return inode_disk_grow(&inode->data, new_size);
+}
+
 /* Grows DISK_INODE to NEW_SIZE.
    Returns true if successful, and false otherwise. */
 bool
-inode_grow (struct inode *inode, off_t new_size)
+inode_grow (struct inode_disk *inode, off_t new_size)
 {
     DEBUG("\n\ninode_grow(): START\n");
 
@@ -580,23 +630,10 @@ inode_grow (struct inode *inode, off_t new_size)
     if (num_dir > 0) 
     {
         DEBUG("Allocating additional direct blocks\n");
-        // block_sector_t start = disk_inode->start + old_num_dir;
-        // if (free_map_allocate(num_dir, &start))
-        // {
-        //     for (i = 0; i < num_dir; i++) 
-        //         block_write (fs_device, start + i, zeros);
-        //     DEBUG("Additional direct blocks allocated successfully!\n");
-        // }
-        // else
-        // {
-        //     DEBUG("Additional direct blocks not allocated successfully :(\n");
-        //     success = false;
-        // }
-
         for (i = old_num_dir; i < new_num_dir; i++)
         {
-            if (free_map_allocate(1, &disk_inode->start + i))
-                block_write (fs_device, disk_inode->start + i, zeros);
+            if (free_map_allocate(1, disk_inode->direct[i].block))
+                block_write (fs_device, *(disk_inode->direct[i].block), zeros);
             else
             {
                 DEBUG("Additional direct blocks not allocated successfully :(\n");
@@ -612,71 +649,67 @@ inode_grow (struct inode *inode, off_t new_size)
     if (num_indir > 0)
     {
         DEBUG("Allocating additional indirect blocks\n");
-        if (disk_inode->indirect != NULL)
+        if (old_num_indir == 0)
         {
-            for (i = 0; i < num_indir; i++)
+            success = free_map_allocate(1, disk_inode->indirect);
+        }
+        if (success)
+        {
+            for (i = old_num_indir; i < new_num_indir; i++)
             {
-                block_sector_t indir_block = *disk_inode->indirect + old_num_indir + i;
+                block_sector_t indir_block = disk_inode->indirect->direct[i].block;
                 DEBUG("indir_block = %d\n", indir_block);
-                if (free_map_allocate(INDIR_BLOCK_SIZE, &indir_block))
+                if (free_map_allocate(1, &indir_block))
                     block_write (fs_device, indir_block, zeros);
                 else
                     success = false;
             }
         }
-        else
-            success = false;
+        // else
+        //     success = false;
         DEBUG("Additional indirect blocks %sallocated successfully%s\n", success ? "" : "not ", success ? "!" : " :(");
     }
 
     // Allocate additional doubly indirect blocks
     if (num_double > 0)
     {
-        DEBUG("Allocating additional doubly indirect blocks\n");
-        if (disk_inode->indirect != NULL)
+        if (old_num_double == 0)
         {
+            success = free_map_allocate(1, disk_inode->doubly_indirect);
+        }
+        if (success)
+        {
+            DEBUG("Allocating additional doubly indirect blocks\n");
             size_t old_num_indir_blocks = DIV_ROUND_UP(old_num_double, INDIR_BLOCK_SIZE);
             size_t new_num_indir_blocks = DIV_ROUND_UP(new_num_double, INDIR_BLOCK_SIZE);
             size_t j = old_num_double;
             for (i = old_num_indir_blocks; i < new_num_indir_blocks; i++)
             {
-                block_sector_t *indir_block = *disk_inode->doubly_indirect + i;
+                struct indirect indir_block = disk_inode->doubly_indirect->indirect[i];
                 DEBUG("indir_block = %p\n", indir_block);
                 if (i > old_num_indir_blocks)
                 {
-                    // indir_block = calloc (1, BLOCK_SECTOR_SIZE);
-                    if (!free_map_allocate(1, indir_block))
+                    if (!free_map_allocate(1, &indir_block))
                     {
                         success = false;
                         break;
                     }
-
                 }
-                if (indir_block != NULL)
+                for (; j < INDIR_BLOCK_SIZE && j < new_num_double; j++)
                 {
-                    for (; j < INDIR_BLOCK_SIZE && j < new_num_double; j++)
-                    {
-                        block_sector_t dbl_indir_block = *indir_block + j;
-                        DEBUG("dbl_indir_block = %d\n", dbl_indir_block);
-                        if (free_map_allocate(INDIR_BLOCK_SIZE, &dbl_indir_block))
-                            block_write (fs_device, dbl_indir_block, zeros);
-                        else
-                            success = false;
-                    }
-                    new_num_double -= INDIR_BLOCK_SIZE;
-                    if (j < INDIR_BLOCK_SIZE)
-                        break;
-                    j = 0;
+                    block_sector_t dbl_indir_block = *(indir_block.direct[j].block);
+                    DEBUG("dbl_indir_block = %d\n", dbl_indir_block);
+                    if (free_map_allocate(1, &dbl_indir_block))
+                        block_write (fs_device, dbl_indir_block, zeros);
+                    else
+                        success = false;
                 }
-                else
-                {
-                    success = false;
+                new_num_double -= INDIR_BLOCK_SIZE;
+                if (j < INDIR_BLOCK_SIZE)
                     break;
-                }
+                j = 0;
             }
         }
-        else
-            success = false;
         DEBUG("Additional doubly indirect blocks %sallocated successfully%s\n", success ? "" : "not ", success ? "!" : " :(");
     }
 
