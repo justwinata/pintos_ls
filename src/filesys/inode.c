@@ -179,8 +179,8 @@ inode_create (block_sector_t sector, off_t length)
               for (i = 0; i < num_indir; i++)
               {
                   block_sector_t indir_block = *disk_inode->indirect + i;
-                  DEBUG("indir_block = %p\n", indir_block);
-                  if (free_map_allocate(1, &indir_block))
+                  DEBUG("indir_block = %d\n", indir_block);
+                  if (free_map_allocate(1, &indir_block)) 
                       block_write (fs_device, indir_block, zeros);
                   else
                       success = false;
@@ -210,7 +210,7 @@ inode_create (block_sector_t sector, off_t length)
                       for (j = 0; j < INDIR_BLOCK_SIZE && j < num_double; j++)
                       {
                           block_sector_t dbl_indir_block = *indir_block + j;
-                          DEBUG("dbl_indir_block = %p\n", dbl_indir_block);
+                          DEBUG("dbl_indir_block = %d\n", dbl_indir_block);
                           if (free_map_allocate(1, &dbl_indir_block))
                               block_write (fs_device, dbl_indir_block, zeros);
                           else
