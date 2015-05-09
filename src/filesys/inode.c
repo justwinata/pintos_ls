@@ -6,14 +6,15 @@
 #include "filesys/filesys.h"
 #include "filesys/free-map.h"
 #include "kernel/malloc.h"
+#include "kernel/synch.h"
 
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
 
-#define DIR_BLOCK_SIZE 123
-#define INDIR_BLOCK_SIZE 128  // Each disk block can hold 512 / 4 = 128 addresses 
-                              // to other blocks.
-                              // http://web.stanford.edu/class/cs140/cgi-bin/section/10sp-proj4.pdf
+#define DIR_BLOCK_SIZE 123    /* Number of direct blocks. */
+#define INDIR_BLOCK_SIZE 128  /* Each disk block can hold 512 / 4 = 128 addresses 
+                                 to other blocks.
+                                 http://web.stanford.edu/class/cs140/cgi-bin/section/10sp-proj4.pdf */
 
 /* On-disk inode.
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
@@ -22,9 +23,8 @@ struct inode_disk
     block_sector_t start;               /* First data sector. */
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
-    // uint32_t unused[125];               /* Not used. */
-    uint32_t unused[DIR_BLOCK_SIZE];    /* Direct blocks. */
 
+    uint32_t direct[DIR_BLOCK_SIZE];    /* Direct blocks. */
     block_sector_t *indirect;           /* Indirect blocks. */
     block_sector_t **doubly_indirect;   /* Doubly indirect blocks. */
   };
@@ -46,6 +46,8 @@ struct inode
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
     struct inode_disk data;             /* Inode content. */
+
+    struct lock write_lock;             /* Lock for synchronization. */
   };
 
 /* Returns the block device sector that contains byte offset POS
@@ -62,6 +64,7 @@ byte_to_sector (const struct inode *inode, off_t pos)
       size_t sectors = pos / BLOCK_SECTOR_SIZE;
       size_t num_dir = (sectors < DIR_BLOCK_SIZE) ? sectors : DIR_BLOCK_SIZE;
 
+      DEBUG("Move onto direct blocks\n");
       if (sectors <= DIR_BLOCK_SIZE)
       {
         DEBUG("byte at %d (%d) = %d\n", pos, num_dir, inode->data.start + num_dir);
@@ -69,7 +72,9 @@ byte_to_sector (const struct inode *inode, off_t pos)
         return inode->data.start + num_dir;
       }
 
+      DEBUG("Move onto indirect blocks\n");
       size_t num_indir = sectors - DIR_BLOCK_SIZE;
+      DEBUG("num_indir = %d\n", num_indir);
       if (sectors <= INDIR_BLOCK_SIZE + DIR_BLOCK_SIZE)
       {
         DEBUG("byte at %d (%d, %d) = %d\n", pos, num_dir, num_indir, *inode->data.indirect + num_indir);
@@ -77,6 +82,7 @@ byte_to_sector (const struct inode *inode, off_t pos)
         return *inode->data.indirect + num_indir;
       }
 
+      DEBUG("Move onto doubly indirect blocks\n");
       size_t num_double = num_indir - INDIR_BLOCK_SIZE;
       size_t dbl_indir_index = num_double / INDIR_BLOCK_SIZE;
       size_t dbl_indir_pos = num_double % INDIR_BLOCK_SIZE;
@@ -116,7 +122,7 @@ bool
 inode_create (block_sector_t sector, off_t length)
 {
   DEBUG("\n\n==============================\n");
-  DEBUG("Calling inode_create...\n");
+  DEBUG("inode_create(): START\n");
   struct inode_disk *disk_inode = NULL;
   bool success = false;
 
@@ -183,10 +189,6 @@ inode_create (block_sector_t sector, off_t length)
           else
               success = false;
           DEBUG("Indirect blocks %sallocated successfully%s\n", success ? "" : "not ", success ? "!" : " :(");
-          // if (success)
-          //     DEBUG("Indirect blocks allocated successfully!\n");
-          // else
-          //     DEBUG("Indirect blocks not allocated successfully :(\n");
       }
 
       // Allocate doubly indirect blocks
@@ -232,7 +234,7 @@ inode_create (block_sector_t sector, off_t length)
       free (disk_inode);
   }
   DEBUG("success = %d\n", success);
-  DEBUG("...inode_create() successful\n");
+  DEBUG("inode_create(): END\n");
   DEBUG("==============================\n\n\n");
   return success;
 }
@@ -417,11 +419,13 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   if (inode->deny_write_cnt)
     return 0;
 
-  // Grow inode if there is a request for more memory than the file contains.
+  /* Grow inode if there is a write request past the EOF. */
   if (offset + size > inode->data.length)
   {
       DEBUG("inode_write_at(): inode size too small. Grow inode\n");
+      // lock_acquire(&inode->write_lock);
       inode_grow (&inode->data, offset + size);
+      // lock_release(&inode->write_lock);
   }
 
   while (size > 0) 
@@ -443,7 +447,9 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
         {
           /* Write full sector directly to disk. */
+          // lock_acquire(&inode->write_lock);
           block_write (fs_device, sector_idx, buffer + bytes_written);
+          // lock_release(&inode->write_lock);
         }
       else 
         {
@@ -463,7 +469,9 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
           else
             memset (bounce, 0, BLOCK_SECTOR_SIZE);
           memcpy (bounce + sector_ofs, buffer + bytes_written, chunk_size);
+          // lock_acquire(&inode->write_lock);
           block_write (fs_device, sector_idx, bounce);
+          // lock_release(&inode->write_lock);
         }
 
       /* Advance. */
@@ -503,9 +511,13 @@ inode_length (const struct inode *inode)
   return inode->data.length;
 }
 
+/* Grows DISK_INODE to NEW_SIZE.
+   Returns true if successful, and false otherwise. */
 bool
 inode_grow (struct inode_disk *disk_inode, off_t new_size)
 {
+    DEBUG("\n\ninode_grow(): START\n");
+
     bool success = true;
 
     // Calculate new block numbers
@@ -529,8 +541,6 @@ inode_grow (struct inode_disk *disk_inode, off_t new_size)
     DEBUG("old num_dir = %d, old num_indir = %d, old num_double = %d\n", old_num_dir, old_num_indir, old_num_double);
 
     // Calculate differences
-    // size_t sectors = new_sectors - old_sectors
-    // DEBUG("diff num sectors = %d\n", sectors);
     size_t num_dir = new_num_dir - old_num_dir;
     size_t num_indir = new_num_indir - old_num_indir;
     size_t num_double = new_num_double - old_num_double;
@@ -542,7 +552,7 @@ inode_grow (struct inode_disk *disk_inode, off_t new_size)
     static char zeros[BLOCK_SECTOR_SIZE];
     size_t i;
 
-    // Allocate direct blocks if needed
+    // Allocate additional direct blocks
     if (num_dir > 0) 
     {
         DEBUG("Allocating additional direct blocks\n");
@@ -624,5 +634,6 @@ inode_grow (struct inode_disk *disk_inode, off_t new_size)
         DEBUG("Additional doubly indirect blocks %sallocated successfully%s\n", success ? "" : "not ", success ? "!" : " :(");
     }
 
+    DEBUG("inode_grow(): END\n\n\n");
     return success;
 }

@@ -39,9 +39,9 @@ void debug_backtrace_all (void);
 #endif /* lib/debug.h */
 
 
-#define MY_DEBUG false
-#ifdef MY_DEBUG
+// #define MY_DEBUG false
+#ifdef NDEBUG
 #define DEBUG(m, ...)
 #else
-#define DEBUG(m, ...)   printf("[DEBUG] %s:%d: " m "\n", __FILE__, __LINE__, ##__VA_ARGS__)
+#define DEBUG(m, ...)   printf("[DEBUG] %s:%d: " m "", __FILE__, __LINE__, ##__VA_ARGS__)
 #endif
