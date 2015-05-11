@@ -17,12 +17,10 @@ static void do_format (void);
 void
 filesys_init (bool format) 
 {
-#if NDEBUG
-  DEBUG("\n\n===============================\n");
+  DEBUG("===============================\n");
   DEBUG("===============================\n");
   DEBUG("===============================\n");
   DEBUG("Calling filesys_init()...\n");
-#endif
 
   fs_device = block_get_role (BLOCK_FILESYS);
   if (fs_device == NULL)
@@ -36,12 +34,10 @@ filesys_init (bool format)
 
   free_map_open ();
 
-#if NDEBUG
   DEBUG("...filesys_init() successful\n");
   DEBUG("===============================\n");
   DEBUG("===============================\n");
-  DEBUG("===============================\n\n\n");
-#endif
+  DEBUG("===============================\n");
 }
 
 /* Shuts down the file system module, writing any unwritten data
