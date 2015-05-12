@@ -20,6 +20,7 @@ struct page
 	void *kv_addr;					/* Address of page from palloc_get_page */
 	void *pd;						/* Page directory associated with page */
 	bool loaded;					/* Page is loaded from file or not */
+	bool pinned;					/* Page is pinned or not */
 	int16_t swap_index;				/* Page's index in swap table if swapped */
 	uint8_t references;				/* Number of references to this page */
 	bool is_stack;					/* Page is part of process stack or not */
@@ -48,7 +49,6 @@ void remove_page (struct spt *, struct page *);
 struct page *add_page (struct spt *, void *);
 struct page *page_lookup (struct hash *, void *);
 struct page* page_lookup_kva (struct hash *, void *);
-bool load_page(struct spt *, void *);
 bool install_page (void *, void *, bool);
 bool is_writable_buffer (char **, unsigned);
 void reclaim_pages (struct thread *);
@@ -58,6 +58,7 @@ void print_spt (struct spt *spt);
 bool is_resident (void *);
 void set_page (struct page *p,
 				bool loaded,
+				bool pinned,
 				int16_t swap_index,
 				uint8_t references,
 				bool is_stack,

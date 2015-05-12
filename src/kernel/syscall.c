@@ -14,6 +14,7 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "vm/page.h"
+#include "vm/swap.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -91,15 +92,15 @@ syscall_handler (struct intr_frame *f)
 
 /* Checks if a pointer is valid by making sure the pointer isn't NULL, is within the user memory, and mapped to a existing page. */
 bool
-is_valid_ptr (void *ptr, struct intr_frame *f)
+is_valid_ptr (void *ptr, struct intr_frame *f UNUSED)
 {
   if (ptr == NULL)
     return false;
   if (!is_user_vaddr (ptr))
     return false;
   if (page_lookup (&thread_current()->spt->table, pg_round_down (ptr)) && 
-        !pagedir_get_page (thread_current ()->pagedir, ptr))  // Page is note resident but is in SPT
-      return process_pf (f, ptr, false); // Process as PF to load page (non-write)
+        !pagedir_get_page (thread_current ()->pagedir, ptr))  // Page is not resident but is in SPT
+      swap_in (pg_round_down (ptr)); // Process as PF to load page (non-write)
   return true;
 }
 
@@ -304,7 +305,7 @@ read (struct intr_frame *f)
       !is_valid_ptr ((void *) buffer, f) ||
       !is_valid_ptr ((void *) *buffer, f) ||
       !is_valid_ptr ((void *) size, f) ||
-      !is_writable_buffer (buffer, size))
+      !is_writable_buffer (buffer, *size))
     {
       lock_release (&thread_filesys_lock);
       thread_exit ();

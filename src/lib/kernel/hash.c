@@ -9,6 +9,8 @@
 #include "../debug.h"
 #include "kernel/malloc.h"
 
+#include <stdio.h>
+
 #define list_elem_to_hash_elem(LIST_ELEM)                       \
         list_entry(LIST_ELEM, struct hash_elem, list_elem)
 
@@ -218,17 +220,13 @@ hash_first (struct hash_iterator *i, struct hash *h)
  *  returns: <return description> 
  */
 void
-hash_variable (struct hash_iterator *i, struct hash_elem *e)
+hash_variable (struct hash_iterator *i)
 {
   ASSERT (i != NULL);
-  ASSERT (e != NULL);
+  ASSERT (i->elem != NULL);
   ASSERT (i->hash != NULL);
 
-  i->bucket = find_bucket (i->hash, e);
-
-  ASSERT (i->bucket != NULL);
-
-  i->elem = e;
+  i->bucket = find_bucket (i->hash, i->elem);
 }
 
 /* Advances i to the next element in the hash table and returns

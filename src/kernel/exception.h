@@ -11,6 +11,4 @@
 void exception_init (void);
 void exception_print_stats (void);
 
-bool process_pf (struct intr_frame *, void *, bool);
-
 #endif /* kernel/exception.h */

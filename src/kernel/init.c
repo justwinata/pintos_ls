@@ -128,6 +128,9 @@ main (void)
   filesys_init (format_filesys);
 #endif
 
+  /* Must come after blocks are initialized */
+  st_init_swap_space ();
+
   printf ("Boot complete.\n");
   
   /* Run actions specified on kernel command line. */

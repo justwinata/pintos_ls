@@ -9,93 +9,26 @@
  |
  +-----------------------------------------------------------------------------
  |
- |  Description:  Virtual memory, etc.
+ |  Description:  Methods for creating, modifying, and destroying SPTs
  |
- |    Algorithm:  Hash table for SPT...
- |
- |   Required Features Not Included:  Eviction, swapping, etc.
- |
- |   Known Bugs:  None.
+ |    Algorithm:  Hash table for SPT
  |
 ******************************************************************************/
-
-/////////////////
-//             //
-//  Resources  //
-//             //
-/////////////////
-
-/*
-	Supplemental Page Table: "Gives you information about the status of 
-	 virtual memory (which addresses are logicially mapped, etc.)."
-	 Courtesy https://groups.google.com/forum/#!topic/12au-cs140/5LDnfoOMdfY
-*/
-
-/*
-	-Functionalities:
-		>Your “s-page table” must be able to decide where to load executable 
-			and which corresponding page of executable to load
-		>Your “s-page table ” must be able to decide how to get swap disk and 
-			which part (in sector) of swap disk stores the corresponding page
-	-Implementation
-		>Use hash table (recommend)
-	-Usage
-		>Rewrite load_segment() (in process.c) to populate s-page table 
-			without loading pages into memory
-		>Page fault handler then loads pages after consulting s-page table
-	Courtesy http://courses.cs.vt.edu/cs3204/spring2007/pintos/Project3Session
-		Spring2007.ppt (slide 12).
-*/
-
-/////////////
-//         //
-//  TO-DO  //
-//         //
-/////////////
-
-/*
-	TODO:
-		Modify the following:
-		---------------------------
-		load_segment() in process.c
-		page_fault() in exception.c
-*/
-
-////////////////
-//            //
-//  Includes  //
-//            //
-////////////////
 
 #include <stdio.h>
 #include <string.h>
 #include "vm/page.h"
 #include "filesys/file.h"
 #include "kernel/malloc.h"
-#include "vm/page.h"
-#include "vm/frame.h"
 #include "kernel/vaddr.h"
 #include "kernel/pte.h"
 #include "kernel/thread.h"
 #include "kernel/pagedir.h"
 #include "kernel/interrupt.h"
 
-/////////////////////////
-//                     //
-//  Globale variables  //
-//                     //
-/////////////////////////
-
-/* Talk about the hash table used for the SPT a little bit. Make sure to 
-	mention the key is the address of a page. */
-
-///////////////
-//           //
-//  Structs  //
-//           //
-///////////////
-
-/* struct page moved to page.h */
+#include "vm/page.h"
+#include "vm/frame.h"
+#include "vm/swap.h"
 
 //////////////////
 //              //
@@ -108,7 +41,6 @@ static unsigned page_hash_kva (const struct hash_elem *, void *);
 static bool page_less (const struct hash_elem *, const struct hash_elem *, void *);
 static bool page_less_kva (const struct hash_elem *, const struct hash_elem *, void *);
 static void page_destructor (struct hash_elem *, void *);
-static void page_destructor_kva (struct hash_elem *, void *);
 
 /////////////////
 //             //
@@ -139,9 +71,8 @@ spt_destroy (struct spt *spt)
 	lock_acquire (&spt->lock);
 	lock_acquire (&spt->lock_kva);
 		hash_destroy (&spt->table, page_destructor);
-		hash_destroy (&spt->table_kva, page_destructor_kva);
+		hash_destroy (&spt->table_kva, NULL);
 		free (spt);
-	// lock_release not needed (locks are freed)
 }
 
 /*
@@ -160,15 +91,16 @@ spt_destroy (struct spt *spt)
 struct page *
 add_page (struct spt *spt, void *addr)
 {
+	struct page *page = (struct page *) malloc (sizeof (struct page));
+	page->addr = addr;
+	page->pd = thread_current()->pagedir;
+	page->references = 0;
+
 	lock_acquire (&spt->lock);
-	    struct page *page = (struct page *) malloc (sizeof (struct page));
-	    page->addr = addr;
-	    page->pd = thread_current()->pagedir;
-	    page->references = 0;
 	    hash_insert (&spt->table, &page->hash_elem);
     lock_release (&spt->lock);
 
-    return page;
+	return page;
 }
 
 /*
@@ -254,13 +186,12 @@ page_less_kva (const struct hash_elem *first, const struct hash_elem *second, vo
 void
 page_destructor (struct hash_elem *elem, void *aux UNUSED)
 {
-	free (hash_entry (elem, struct page, hash_elem));
-}
-
-void
-page_destructor_kva (struct hash_elem *elem, void *aux UNUSED)
-{
-	free (hash_entry (elem, struct page, hash_elem_kva));
+	struct page *page = hash_entry (elem, struct page, hash_elem);
+	
+	if(page->swap_index >= 0)
+		delete_from_swap (page->swap_index);
+	
+	free (page);
 }
 
 /*
@@ -291,73 +222,6 @@ page_lookup_kva (struct hash *table, void *kv_addr)
 	elem = hash_find (table, &page.hash_elem_kva);
 	return elem != NULL ? hash_entry (elem, struct page, hash_elem_kva) : NULL;
 }
-
-/*
- * Function:  load_page 
- * --------------------
- *  Loads pages as needed when a process page faults on memory it should have 
- *    have access to but has not been loaded (lazy loading). Calculates  using 
- *    the file from which the pages for the process are laoded (stored by 
- *    pointer in each page entry in the SPT) and loads the page-sized section 
- *    of the file. The faulting process will return to the statement on which 
- *    it page faulted and resume with that same instruction, which should then 
- *    continue without another page fault.
- *
- *  addr: the address on which the halted process faulted
- */
-bool
-load_page (struct spt *spt, void *addr)
-{
-  /* Calculate how to fill this page.
-     We will read PAGE_READ_BYTES bytes from FILE
-     and zero the final PAGE_ZERO_BYTES bytes. */
-  
-    struct page *page;
-	
-	lock_acquire (&spt->lock);
-		page = page_lookup (&spt->table, addr);
-	lock_release (&spt->lock);
-
-	/* Note: a file might be null for a given page; if so, this means it is not 
-	 a part of the executable section of a process. In that case, it would 
-	 also have a null offset (ofs). */
-
-	if(page == NULL || page->swap_index >= 0) // Page is null or swapped - null is bad
-	{
-		//TODO: Implement swapping and stuff
-		return false; //Fail for now :(    --    Could also panic kernel
-	}
-
-	/* Get a page of memory. */
-	//Should virtual addresses be contiguous for a process? Are they already?
-	uint8_t *kpage = allocate_uframe (PAL_USER); //palloc_get_page (PAL_USER);
-	if (kpage == NULL)
-		return false;
-
-	/* Load this page. */
-	file_seek (page->file, page->ofs);
-	if (file_read (page->file, kpage, page->read_bytes) != (int) page->read_bytes)
-	{
-		deallocate_uframe (kpage);
-		return false; 
-	}
-
-	memset (kpage + page->read_bytes, 0, page->zero_bytes);
-
-	/* Add the page to the process's address space. */
-	if (!install_page (page->addr, kpage, page->writable)) 
-	{
-		deallocate_uframe (kpage);
-		return false; 
-	}
-
-	/* Mark the page as loaded and set kv_addr */
-	page->loaded = true;
-	set_page_kva (spt, page, kpage);
-
-	return true;
-}
-
 
 /* Copied directly from process.c for use by exception.c in load_page */
 /* Adds a mapping from user virtual address UPAGE to kernel
@@ -399,7 +263,6 @@ reclaim_pages (struct thread *thread)
 	struct spt *spt = thread->spt;
 
 	lock_acquire (&spt->lock);
-
 		struct page *current;
 		struct hash_iterator hand;
 		hash_first (&hand, &spt->table);
@@ -409,8 +272,8 @@ reclaim_pages (struct thread *thread)
 			current = hash_entry (hash_cur (&hand), struct page, hash_elem);
 			if(current->loaded)
 				deallocate_uframe (current->kv_addr);
+			pagedir_clear_page (thread->pagedir, current->addr);
 		}
-
 	lock_release (&spt->lock);
 
 	spt_destroy (spt);
@@ -430,6 +293,7 @@ print_page (struct page *page)
 	printf("Page:\t\t%p\nAddress:\t%p\nKV address:\t%p"
 		"\n-----------------------------------"
 		"\n\tPage directory:\t%p"
+		"\n\tPinned:\t\t%s"
 		"\n\tLoaded:\t\t%s"
 		"\n\tResident:\t%s"
 		"\n\tSwap index:\t%d"
@@ -451,8 +315,9 @@ print_page (struct page *page)
 		page->addr,
 		page->kv_addr,
 		page->pd,
+		page->pinned ? "True" : "False",
 		page->loaded ? "True" : "False",
-		((uint32_t) page & PTE_P) ? "True" : "False",
+		((uint32_t) page->addr & PTE_P) ? "True" : "False",
 		page->swap_index,
 		pagedir_is_accessed (page->pd, page->kv_addr) ? "True" : "False",
 		pagedir_is_dirty (page->pd, page->kv_addr) ? "True" : "False",
@@ -477,14 +342,15 @@ print_spt (struct spt *spt)
 
 	printf ("=============== SPT ===============\n");
 	while (hash_next (&hand))
-		//printf ("%p\n", hash_entry (hash_cur (&hand), struct page, hash_elem));
-		print_page (hash_entry (hash_cur (&hand), struct page, hash_elem));
+		printf ("Hash element %p for page %p\n", hash_cur (&hand), hash_entry (hash_cur (&hand), struct page, hash_elem));
+		//print_page (hash_entry (hash_cur (&hand), struct page, hash_elem));
 	printf ("===================================\n");
 }
 
 void
 set_page (struct page *page,
 			bool loaded,
+			bool pinned,
 			int16_t swap_index,
 			uint8_t references,
 			bool is_stack,
@@ -498,6 +364,7 @@ set_page (struct page *page,
 			off_t ofs)
 {
 	page->loaded = loaded;
+	page->pinned = pinned;
 	page->swap_index = swap_index;
 	page->references = references;
 	page->is_stack = is_stack;

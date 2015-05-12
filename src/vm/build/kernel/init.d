@@ -10,9 +10,9 @@ kernel/init.o: ../../kernel/init.c ../../kernel/init.h ../../lib/debug.h \
   ../../kernel/palloc.h ../../kernel/pte.h ../../kernel/vaddr.h \
   ../../kernel/thread.h ../../lib/kernel/list.h ../../kernel/synch.h \
   ../../filesys/file.h ../../filesys/off_t.h ../../kernel/process.h \
-  ../../kernel/exception.h ../../kernel/gdt.h ../../kernel/syscall.h \
-  ../../kernel/tss.h ../../vm/frame.h ../../lib/kernel/hash.h \
-  ../../lib/kernel/list.h ../../kernel/palloc.h ../../vm/page.h \
-  ../../kernel/synch.h ../../filesys/off_t.h ../../vm/swap.h \
-  ../../vm/page.h ../../vm/frame.h ../../devices/block.h \
-  ../../devices/ide.h ../../filesys/filesys.h ../../filesys/fsutil.h
+  ../../vm/page.h ../../lib/kernel/hash.h ../../lib/kernel/list.h \
+  ../../kernel/synch.h ../../filesys/off_t.h ../../kernel/exception.h \
+  ../../kernel/gdt.h ../../kernel/syscall.h ../../kernel/tss.h \
+  ../../vm/frame.h ../../kernel/palloc.h ../../vm/swap.h ../../vm/page.h \
+  ../../vm/frame.h ../../devices/block.h ../../devices/ide.h \
+  ../../filesys/filesys.h ../../filesys/fsutil.h

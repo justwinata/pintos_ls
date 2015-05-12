@@ -11,6 +11,7 @@
 #include "kernel/pagedir.h"
 #include "kernel/syscall.h"
 #include "kernel/pte.h"
+#include "kernel/synch.h"
 #include "vm/page.h"
 #include "vm/frame.h"
 #include "vm/swap.h"
@@ -166,36 +167,31 @@ page_fault (struct intr_frame *f)
     f->eax = 0;
   }
 
-  if (!process_pf (f, fault_addr, write))
-    thread_exit ();
-}
-
-bool
-process_pf (struct intr_frame *frame, void *fault_addr, bool write)
-{
-  //Faulting address' associated page address
   void *f_paddr = pg_round_down (fault_addr);
 
   if (!thread_current ())
-    return false;
+    PANIC ("Current thread is null.");
 
   struct spt *spt = thread_current ()->spt;
-  struct page *f_page = page_lookup (&spt->table, f_paddr);
 
-  if (is_kernel_vaddr (fault_addr) ||                             // Kernel access
-      fault_addr == 0 ||                                          // Null dereference
-      (write && ((uint32_t) pg_round_down (fault_addr) & PTE_W))) // Write on read-only memory
-    return false;
-  else if (f_page != NULL && f_page->swap_index >= 0)
-    swap_in (f_paddr);                             // Swap in        // !!! !!! !!! TODO: Make reentrant (?) !!! !!! !!!
-  else if (is_stack (frame, fault_addr))
-    load_stack (frame, f_paddr);                  // Grow stack
+  lock_acquire (&spt->lock);
+    struct page *f_page = page_lookup (&spt->table, f_paddr);
+  lock_release (&spt->lock);
+
+  if (is_kernel_vaddr (fault_addr) ||               // Kernel access
+      fault_addr == 0 ||                            // Null dereference
+      (write && 
+        ((unsigned) pagedir_get_page (thread_current()->
+        pagedir, fault_addr) & PTE_W)))             // Write on read-only memory
+    thread_exit ();
+  else if (not_present && f_page->swap_index > -1)
+    swap_in (f_paddr);                              // Swap in
+  else if (is_stack (f, fault_addr))
+    load_stack (f, f_paddr);                        // Grow stack
   else if (f_page)
-    load_page (spt, f_paddr);                     // Lazy loading   // !!! !!! !!! TODO: Make reentrant !!! !!! !!!
+    load_page (spt, f_page);                        // Lazy loading
   else
-    return false;
-
-  return true;
+    thread_exit ();
 }
 
 /*

@@ -187,7 +187,7 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
-
+  ASSERT (cur);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -512,14 +512,13 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
     /* Add page to SPT and set initial values */
     struct page *page = add_page (spt, addr);
-    set_page (page, false, -1, 1, false, page_zero_bytes, page_read_bytes, 
+    set_page (page, false, false, -1, 1, false, page_zero_bytes, page_read_bytes, 
       count, PGSIZE, NULL, writable, file, PGSIZE * count);
     /* Page added and values set. */
 
     /* Advance */
     read_bytes -= page_read_bytes;
     zero_bytes -= page_zero_bytes;
-    //upage += PGSIZE;
     addr += page->size;
   }
 
@@ -531,7 +530,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack (void **esp, const char *file_args)
 {
-  uint8_t *kpage;
+  struct frame *frame;
   char *esp_char;
   unsigned int *esp_uint;
   int *esp_int;
@@ -540,77 +539,76 @@ setup_stack (void **esp, const char *file_args)
   bool success = false;
   bool writable = true;
 
-  /* Add frame to FT and allocate */
-  kpage = allocate_uframe (PAL_USER | PAL_ZERO); //palloc_get_page (PAL_USER | PAL_ZERO);
+  frame = allocate_uframe (PAL_USER | PAL_ZERO);
 
-  if (kpage != NULL) 
+  if (frame) 
+  {
+    void *addr = PHYS_BASE - PGSIZE;
+    success = install_page (addr, frame->addr, writable);
+
+    if (success)
     {
-      void *addr = PHYS_BASE - PGSIZE;
-      success = install_page (addr, kpage, writable);
+      struct spt *spt = thread_current()->spt;
+      struct page *page = add_page (spt, addr);
+      set_page (page, true, false, -1, 1, true, 0, 0, 0, PGSIZE, NULL, writable, NULL, 0);
+      set_page_kva (spt, page, frame->addr);
 
-      if (success)
+      /* Extract the TOTAL_BYTES to push initially, and decrement
+         ESP by that amount. */
+
+      total_bytes = ((int *) file_args)[0];
+      *esp = PHYS_BASE - total_bytes;
+
+      /* Save the value of ESP as a char pointer, and copy all
+         of the tokenized arguments onto the stack. */
+      esp_char = *esp;
+      memcpy (esp_char, &file_args[sizeof (int)], total_bytes);
+
+      /* Word-align ESP and save it as an unsigned int pointer. */
+      *esp -= ((unsigned int) esp_char % 4);
+      esp_uint = *esp;
+
+      /* Now push the starting stack address of each tokenized
+         argument onto the stack, starting with address 0. */
+      esp_uint--;
+      *esp_uint = 0;
+      do
         {
-          /* Add page to SPT */
-
-          /* Page added. */
-
-          /* Extract the TOTAL_BYTES to push initially, and decrement
-             ESP by that amount. */
-
-          total_bytes = ((int *) file_args)[0];
-          *esp = PHYS_BASE - total_bytes;
-
-          /* Save the value of ESP as a char pointer, and copy all
-             of the tokenized arguments onto the stack. */
-          esp_char = *esp;
-          memcpy (esp_char, &file_args[sizeof (int)], total_bytes);
-
-          /* Word-align ESP and save it as an unsigned int pointer. */
-          *esp -= ((unsigned int) esp_char % 4);
-          esp_uint = *esp;
-
-          /* Now push the starting stack address of each tokenized
-             argument onto the stack, starting with address 0. */
-          esp_uint--;
-          *esp_uint = 0;
-          do
+          total_bytes--;
+          if (esp_char[total_bytes - 1] == '\0')
             {
-              total_bytes--;
-              if (esp_char[total_bytes - 1] == '\0')
-                {
-                  esp_uint--;
-                  *esp_uint = (unsigned int) &esp_char[total_bytes];
-                  argc++;
-                }
+              esp_uint--;
+              *esp_uint = (unsigned int) &esp_char[total_bytes];
+              argc++;
             }
-          while (total_bytes > 0);
-
-          /* Now push the stack address of the last address pushed onto the
-             stack. In other words, push what will be known as 'char **argv'
-             within a program's main function. */
-          esp_uint--;
-          *esp_uint = (unsigned int) (esp_uint + 1);
-
-          /* Next, push ARGC onto the stack. */
-          esp_int = (int *) --esp_uint;
-          *esp_int = argc;
-
-          /* Finally, push a fake return address of 0 onto the stack. */
-          esp_uint--;
-          *esp_uint = 0;
-
-          /* Update ESP to point to the end of the initialized stack. */
-          *esp = (void *) esp_uint;
-
-          //hex_dump ((uintptr_t) *esp, *esp, (size_t) (PHYS_BASE - *esp), 1);
         }
-      else
-        {
-          /* Remove frame from frame table */
-          deallocate_uframe (kpage);
-          /* Removed. */
-        }
+      while (total_bytes > 0);
+
+      /* Now push the stack address of the last address pushed onto the
+         stack. In other words, push what will be known as 'char **argv'
+         within a program's main function. */
+      esp_uint--;
+      *esp_uint = (unsigned int) (esp_uint + 1);
+
+      /* Next, push ARGC onto the stack. */
+      esp_int = (int *) --esp_uint;
+      *esp_int = argc;
+
+      /* Finally, push a fake return address of 0 onto the stack. */
+      esp_uint--;
+      *esp_uint = 0;
+
+      /* Update ESP to point to the end of the initialized stack. */
+      *esp = (void *) esp_uint;
+
+      //hex_dump ((uintptr_t) *esp, *esp, (size_t) (PHYS_BASE - *esp), 1);
     }
+    else
+    {
+      deallocate_uframe_f (frame);
+    }
+  }
+  
   return success;
 }
 
@@ -631,20 +629,65 @@ load_stack (struct intr_frame *frame, void *f_paddr)
 
   bool writable = true;
 
-  /* Add frame to FT and allocate */
-  // !!! !!! !!! TODO: Make reentrant (or something ) !!! !!! !!!
-  void *kpage = allocate_uframe (PAL_USER | PAL_ZERO); //palloc_get_page (PAL_USER | PAL_ZERO);
+  struct frame *uframe = allocate_uframe (PAL_USER | PAL_ZERO);
 
-  if (kpage == NULL)
-    PANIC ("Null page allocated during page fault on address.\n");
+  if (!uframe)
+    PANIC ("Null page allocated during page fault on address %p.\n", f_paddr);
 
-  /* Add page to SPT */
-  // !!! !!! !!! TODO: Make reentrant !!! !!! !!!
   struct spt *spt = thread_current()->spt;
   struct page *page = add_page (spt, f_paddr);
-  set_page (page, true, -1, 1, true, 0, 0, 0, PGSIZE, NULL, writable, NULL, 0);
-  set_page_kva (spt, page, kpage);
-  /* Page added. */
+  set_page (page, true, false, -1, 1, true, 0, 0, 0, PGSIZE, NULL, writable, NULL, 0);
+  set_page_kva (spt, page, uframe->addr);
 
-  ASSERT (install_page (f_paddr, kpage, writable));
+  ASSERT (install_page (f_paddr, uframe->addr, writable));
+}
+
+/*
+ * Function:  load_page 
+ * --------------------
+ *  Loads pages as needed when a process page faults on memory it should have 
+ *    have access to but has not been loaded (lazy loading). Calculates  using 
+ *    the file from which the pages for the process are laoded (stored by 
+ *    pointer in each page entry in the SPT) and loads the page-sized section 
+ *    of the file. The faulting process will return to the statement on which 
+ *    it page faulted and resume with that same instruction, which should then 
+ *    continue without another page fault.
+ *
+ *  addr: the address on which the halted process faulted
+ */
+bool
+load_page (struct spt *spt, struct page *page)
+{
+  /* Calculate how to fill this page.
+     We will read PAGE_READ_BYTES bytes from FILE
+     and zero the final PAGE_ZERO_BYTES bytes. */
+
+  /* Get a page of memory. */
+  struct frame *frame = allocate_uframe (PAL_USER);
+
+  if (!frame)
+    return false;
+
+  /* Load this page. */
+  file_seek (page->file, page->ofs);
+  if (file_read (page->file, frame->addr, page->read_bytes) != (int) page->read_bytes)
+  {
+    deallocate_uframe_f (frame);
+    return false; 
+  }
+
+  memset (frame->addr + page->read_bytes, 0, page->zero_bytes);
+
+  /* Add the page to the process's address space. */
+  if (!install_page (page->addr, frame->addr, page->writable)) 
+  {
+    deallocate_uframe_f (frame);
+    return false; 
+  }
+
+  /* Mark the page as loaded and set kv_addr */
+  page->loaded = true;
+  set_page_kva (spt, page, frame->addr);
+
+  return true;
 }

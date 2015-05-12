@@ -3,6 +3,7 @@
 
 #include "kernel/thread.h"
 #include "kernel/interrupt.h"
+#include "vm/page.h"
 
 static int MAX_STACK_SIZE = 8 * 1024 * 1024;	/* An 8MB maximum stack size */
 static int STACK_MARGIN = 32;					/* A margin of error to be 
@@ -18,5 +19,6 @@ void process_exit (void);
 void process_activate (void);
 bool is_stack (struct intr_frame *, void *);
 void load_stack (struct intr_frame *, void *);
+bool load_page (struct spt *, struct page *);
 
 #endif /* kernel/process.h */

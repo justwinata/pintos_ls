@@ -369,14 +369,3 @@ bitmap_dump (const struct bitmap *b)
 {
   hex_dump (0, b->bits, byte_cnt (b->bit_cnt), false);
 }
-
-bool
-bitmap_expand (struct bitmap *b)
-{
-  uint32_t old_cnt = byte_cnt (b->bit_cnt);
-  b->bit_cnt += 1;  // Make variable size? (TODO: Consider)
-  if (old_cnt == byte_cnt (b->bit_cnt))
-    return 0;
-  b->bits = realloc (b->bits, byte_cnt (b->bit_cnt));
-  return b->bits ? 1 : -1;
-}

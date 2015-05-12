@@ -11,40 +11,9 @@
  |
  |  Description:  Virtual memory, etc.
  |
- |    Algorithm:  Swapping with enhanced second-chance replacement algorithm
- |
- |   Required Features Not Included:  Swapping, pinning.
- |
- |   Known Bugs:  None.
+ |    Algorithm:  Swapping with second-chance replacement algorithm
  |
 ******************************************************************************/
-
-/////////////////
-//             //
-//  Resources  //
-//             //
-/////////////////
-
-//
-
-/////////////
-//         //
-//  TO-DO  //
-//         //
-/////////////
-
-/*
-	TODO:
-		Add:
-			Swap space
-			Pinning
-*/
-
-////////////////
-//            //
-//  Includes  //
-//            //
-////////////////
 
 #include <stdio.h>
 #include <string.h>
@@ -75,47 +44,33 @@ static struct block *swap_space;
 static struct lock lock;
 static const uint32_t PGS_PER_BLK = PGSIZE / BLOCK_SECTOR_SIZE;
 
-///////////////
-//           //
-//  Structs  //
-//           //
-///////////////
-
-//
-
-//////////////////
-//              //
-//  Prototypes  //
-//              //
-//////////////////
-
-//
-
 /////////////////
 //             //
 //  Functions  //
 //             //
 /////////////////
 
-/*
- * Function:  <name>
- * --------------------
- *	Does?
- */
 void
 st_init (void)
 {
 	lock_init (&lock);
-	swap_space = block_get_role (BLOCK_SWAP);
-	swap_table = bitmap_create (0);
 }
 
-/*
- * Function:  <name>
- * --------------------
- *	Does?
- */
 void
+st_init_swap_space (void)
+{
+	swap_space = block_get_role (BLOCK_SWAP);
+	swap_table = bitmap_create (block_size (swap_space));
+}
+
+void
+delete_from_swap (uint32_t index)
+{
+	ASSERT (index < bitmap_size (swap_table));
+	bitmap_reset (swap_table, index);
+}
+
+bool
 swap_out (struct frame *frame, bool dirty)
 {
 	ASSERT (frame);
@@ -124,74 +79,55 @@ swap_out (struct frame *frame, bool dirty)
 		lock_acquire (&frame->thread->spt->lock_kva);
 			struct page *page = page_lookup_kva (&frame->thread->spt->table_kva, frame->addr);
 		lock_release (&frame->thread->spt->lock_kva);
-													// ^This is the sole reason table_kva exists
+		ASSERT (page);
 
-		ASSERT (page != NULL);
+		page->pinned = frame->pinned;
 
-		if (dirty || page->is_stack)	// Stack must always be written (at least for now) because swapping in and swapping out destroys swap data
+		if (dirty || page->is_stack)
 		{
-			if (!bitmap_any (swap_table, 0, bitmap_size (swap_table)))
-			{
-				if(bitmap_file_size (swap_table) * PGSIZE < block_size (block_get_role (BLOCK_SWAP)))
-					bitmap_expand (swap_table);
-				else
-					PANIC ("Swap disk out of space.\n");
-			}
+			int index = bitmap_scan (swap_table, 0, 1, 0);
 
-			int32_t index = bitmap_scan (swap_table, 0, 1, 0);
-			printf ("Found index: %d\n", index);
+			if (index == -1)
+				PANIC ("Swap disk out of space.\n");
 
-			printf ("Writing %p\n", frame->addr);
-
-			uint32_t counter;
+			size_t counter;
 			for (counter = 0; counter < PGS_PER_BLK; counter++)
 				block_write (swap_space,
 							(index * PGS_PER_BLK) + counter,
-							&frame->addr + (counter * BLOCK_SECTOR_SIZE));
-
-			printf (">>> Reached near-end of swap out <<<\n");
+							page->addr + (counter * BLOCK_SECTOR_SIZE));
 
 			bitmap_mark (swap_table, index);
 			page->swap_index = index;
 		}
-
-		deallocate_uframe (frame);
-
+		pagedir_clear_page (frame->thread->pagedir, page->addr);
 	lock_release (&lock);
+
+	return true;
 }
 
-/*
- * Function:  <name>
- * --------------------
- *	Does?
- */
 void
 swap_in (void *addr)
 {
-	ASSERT (addr);
-
-	void *kpage = allocate_uframe (PAL_USER);
-
-	ASSERT (kpage);
+	struct frame *frame = allocate_uframe (PAL_USER);
+	ASSERT (frame);
 
 	lock_acquire (&lock);
+		lock_acquire (&frame->thread->spt->lock);
+			struct page *page = page_lookup (&frame->thread->spt->table, addr);
+		lock_release (&frame->thread->spt->lock);
+		ASSERT (page);
 
-		struct frame *frame = frame_lookup (addr);
+		frame->pinned = page->pinned;
+		install_page (addr, frame->addr, page->writable);
 
-		lock_acquire (&frame->thread->spt->lock_kva);
-			struct page *page = page_lookup_kva (&frame->thread->spt->table_kva, frame->addr);
-		lock_release (&frame->thread->spt->lock_kva);
-
-		ASSERT (page != NULL);
-
-		install_page (addr, kpage, page->writable);
 		int32_t index = page->swap_index;
+		ASSERT (index > -1);
 
 		uint32_t counter;
 		for (counter = 0; counter < PGS_PER_BLK; counter++)
-				block_write (swap_space,
+				block_read (swap_space,
 							(index * PGS_PER_BLK) + counter,
-							&frame->addr + (counter * BLOCK_SECTOR_SIZE));
+							page->addr + (counter * BLOCK_SECTOR_SIZE));
 
 		bitmap_reset (swap_table, page->swap_index);
 		page->swap_index = -1;

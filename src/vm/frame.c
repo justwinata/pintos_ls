@@ -51,6 +51,7 @@
 #include "kernel/pagedir.h"
 
 #include "kernel/vaddr.h"
+#include "vm/page.h"
 
 /////////////////////////
 //                     //
@@ -99,7 +100,6 @@ void
 ft_init()
 {
 	hash_init (&frame_table, frame_hash, frame_less, NULL);
-	hash_first (&hand, &frame_table);
 
 	// Create and insert dummy frame for sake of hand_frame
 	struct frame *frame = (struct frame *) malloc (sizeof (struct frame));
@@ -108,9 +108,12 @@ ft_init()
 	frame->thread = thread_current ();
 	hash_insert(&frame_table, &frame->hash_elem);
 
-	hand_frame = hash_entry (hash_next(&hand), struct frame, hash_elem);
+	// Must come after any frame-table modifications
+	hash_first (&hand, &frame_table);
 
-	hash_next (&hand);
+	// Call hash_next on hand and set hand_frame to get clock ready
+	hand_frame = hash_entry (hash_next (&hand), struct frame, hash_elem);
+
 	lock_init (&lock);
 }
 
@@ -127,7 +130,7 @@ unsigned
 frame_hash (const struct hash_elem *ft_elem, void *aux UNUSED)
 {
 	const struct frame *frame = hash_entry (ft_elem, struct frame, hash_elem);
-	return hash_bytes (&frame->addr, sizeof frame->addr);
+	return hash_int ((int) frame->addr);
 }
 
 /*
@@ -175,33 +178,30 @@ frame_lookup (void *address)
  *
  *  returns: <return description> 
  */
-void*
+struct frame *
 allocate_uframe(enum palloc_flags flags)
 {
+	void *addr = palloc_get_page (flags);
+
+	if (!addr)
+	{
+		evict_page ();
+		addr = palloc_get_page (flags);
+	}
+
+	if (!addr)
+		return addr;
+
+	struct frame *frame = (struct frame *) malloc (sizeof (struct frame));
+	frame->addr = addr;
+	frame->pinned = false;
+	frame->thread = thread_current ();
+	
 	lock_acquire(&lock);
-	
-		void *addr = palloc_get_page (flags);
-
-		if(addr == NULL)
-		{
-			evict_page ();
-			printf ("\t>> Page evicted <<\n");
-			addr = palloc_get_page (flags);
-		}
-
-		struct frame *frame = (struct frame *) malloc (sizeof (struct frame));
-		frame->addr = addr;
-		frame->pinned = false;
-		frame->thread = thread_current ();
-
-		if (!frame->thread)
-			printf ("\n\tNull thread in frame %p\n\n", frame);
-		
 		hash_insert(&frame_table, &frame->hash_elem);
-	
 	lock_release(&lock);
 	
-	return addr;
+	return frame;
 }
 
 /*
@@ -216,19 +216,26 @@ allocate_uframe(enum palloc_flags flags)
 void
 deallocate_uframe (void *addr)
 {
-	//TODO: Consider if free_frame option needed
 	lock_acquire (&lock);
-
 		struct frame *frame = frame_lookup(addr);
-
-		if (!frame)
-			return;
-
-		palloc_free_page (frame->addr);
-		hash_delete(&frame_table, &frame->hash_elem);
-		free (frame);
-
 	lock_release (&lock);
+
+	if (!frame)
+		return;
+	
+	deallocate_uframe_f (frame);
+}
+
+void
+deallocate_uframe_f (struct frame *frame)
+{
+	palloc_free_page (frame->addr);
+
+	lock_acquire (&lock);
+		hash_delete(&frame_table, &frame->hash_elem);
+	lock_release (&lock);
+
+	free (frame);
 }
 
 /*
@@ -239,49 +246,42 @@ deallocate_uframe (void *addr)
  *  params...
  *
  */
+
 void
 evict_page (void)
 {
-	/* Regain meaning for iterator in between hash-table modifications */
-	hash_variable (&hand, &hand_frame->hash_elem);
+	lock_acquire (&lock);
+		hash_variable (&hand);
 
-	//print_ft ();
+		struct frame *victim;
+		uint32_t *pd;
+		bool accessed;
+		bool dirty;
 
-	/* TODO: Don't forget to add synchronization (and make sure Rellermeyer's
-		warning in the PDF is accounted for)! */
-	uint32_t *pd;
-	bool accessed;
-	bool dirty;
+		bool found = false;
 
-	bool found = false;
-
-	while (!found)
-	{
-		if (!hand_frame->pinned)
+		while (!found)
 		{
-			if (!hash_find (&frame_table, &hand_frame->hash_elem))
-				goto advance_ptr;
-
-			pd = hand_frame->thread->pagedir;
-			accessed = pagedir_is_accessed (pd, hand_frame->addr);
-			dirty = pagedir_is_dirty (pd, hand_frame->addr);
-
-			if (!accessed)
+			if (!hand_frame->pinned && hash_find (&frame_table, &hand_frame->hash_elem))
 			{
-				swap_out (hand_frame, dirty);
-				found = true;
-				printf ("Swap out compeleted.\n");
+				pd = hand_frame->thread->pagedir;
+				accessed = pagedir_is_accessed (pd, hand_frame->addr);
+				dirty = pagedir_is_dirty (pd, hand_frame->addr);
+
+				if (!accessed)
+					found = swap_out (hand_frame, dirty);
+				else
+					pagedir_set_accessed (pd, hand_frame->addr, false);
 			}
-			else
-				pagedir_set_accessed (pd, hand_frame->addr, false);
+
+			if (!hash_next (&hand))
+					hash_first (&hand, &frame_table);
+
+			victim = hand_frame;
+			hand_frame = hash_entry (hash_cur(&hand), struct frame, hash_elem);
 		}
-
-advance_ptr:
-		if (!hash_next (&hand))
-				hash_first (&hand, &frame_table);	//If reached end, start over
-
-		hand_frame = hash_entry (hash_cur(&hand), struct frame, hash_elem);
-	}
+	lock_release (&lock);
+	deallocate_uframe_f (victim);
 }
 
 void
@@ -295,8 +295,9 @@ print_ft (void)
 	while (hash_next (&hand))
 	{
 		frame = hash_entry (hash_cur (&hand), struct frame, hash_elem);
-		printf ("Frame %p", frame);
-		printf (" with thread %p\n", frame->thread);
+		printf ("Frame address %p", frame->addr);
+		printf (" with hash elem %p", &frame->hash_elem);
+		printf (" and addr %p\n", frame->addr);
 	}
 	printf ("==================================\n");
 }
